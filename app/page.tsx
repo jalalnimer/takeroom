@@ -27,7 +27,9 @@ type Post = {
   id: number;
   type: PostType;
   room: Room;
+  topic: string;
   subtopic: string;
+  angle: string;
   title: string;
   body: string;
   author: string;
@@ -58,22 +60,167 @@ const rooms: Room[] = [
   "Gaming",
 ];
 
-const subtopics: Record<Room, string[]> = {
-  Film: ["Marvel", "DC", "Horror", "Crime", "Classics", "Awards Season"],
-  Television: ["Netflix", "HBO", "Anime", "Sitcoms", "Drama", "Reality TV"],
-  Sports: [
-    "Football",
-    "NBA",
-    "UFC",
-    "Formula 1",
-    "Champions League",
-    "World Cup",
+const stances: Stance[] = ["Agree", "Disagree", "Mixed", "Convince Me"];
+
+const debateAngles = [
+  "Overrated",
+  "Underrated",
+  "Fallen Off",
+  "Better Than",
+  "Change My Mind",
+  "Prediction",
+  "Ranking",
+  "Worth It",
+  "Who Wins",
+  "Hot Take",
+];
+
+const roomStructure: Record<Room, { name: string; subtopics: string[] }[]> = {
+  Film: [
+    {
+      name: "Superhero Films",
+      subtopics: ["Marvel", "DC", "The Batman", "Spider-Man", "X-Men"],
+    },
+    {
+      name: "Genres",
+      subtopics: ["Horror", "Crime", "Drama", "Comedy", "Action"],
+    },
+    {
+      name: "Film Culture",
+      subtopics: ["Classics", "Awards Season", "Directors", "Actors"],
+    },
   ],
-  Politics: ["Elections", "Policy", "International Relations", "Leadership"],
-  Society: ["Education", "Relationships", "Work Culture", "Lifestyle"],
-  "Media & Culture": ["TikTok", "YouTube", "Influencers", "News", "Celebrities"],
-  Music: ["Hip-Hop", "R&B", "Pop", "Albums", "Artists", "Concerts"],
-  Gaming: ["PlayStation", "Xbox", "PC Gaming", "Esports", "Story Games"],
+  Television: [
+    {
+      name: "Streaming Platforms",
+      subtopics: ["Netflix", "HBO", "Prime Video", "Disney+", "Apple TV+"],
+    },
+    {
+      name: "Show Types",
+      subtopics: ["Drama", "Sitcoms", "Anime", "Reality TV", "Crime Shows"],
+    },
+  ],
+  Sports: [
+    {
+      name: "Football",
+      subtopics: [
+        "Premier League",
+        "Champions League",
+        "World Cup",
+        "Ballon d'Or",
+        "Player Debates",
+      ],
+    },
+    {
+      name: "Combat Sports",
+      subtopics: ["UFC", "Boxing", "Title Fights", "GOAT Debates"],
+    },
+    {
+      name: "Other Sports",
+      subtopics: ["NBA", "Formula 1", "Tennis", "Transfers"],
+    },
+  ],
+  Politics: [
+    {
+      name: "Government",
+      subtopics: ["Elections", "Leadership", "Policy", "Public Opinion"],
+    },
+    {
+      name: "World Affairs",
+      subtopics: ["International Relations", "Economy", "Conflict", "Diplomacy"],
+    },
+  ],
+  Society: [
+    {
+      name: "Modern Life",
+      subtopics: ["Education", "Work Culture", "Money & Success", "Lifestyle"],
+    },
+    {
+      name: "People & Behavior",
+      subtopics: ["Relationships", "Identity", "Social Pressure", "Generations"],
+    },
+  ],
+  "Media & Culture": [
+    {
+      name: "Internet Culture",
+      subtopics: ["TikTok", "YouTube", "Influencers", "Memes"],
+    },
+    {
+      name: "Public Conversation",
+      subtopics: ["News", "Celebrities", "Cancel Culture", "Online Debates"],
+    },
+  ],
+  Music: [
+    {
+      name: "Genres",
+      subtopics: ["Hip-Hop", "R&B", "Pop", "Rock", "Afrobeats"],
+    },
+    {
+      name: "Music Culture",
+      subtopics: ["Albums", "Artists", "Concerts", "Rankings"],
+    },
+  ],
+  Gaming: [
+    {
+      name: "Platforms",
+      subtopics: ["PlayStation", "Xbox", "PC Gaming", "Nintendo"],
+    },
+    {
+      name: "Game Types",
+      subtopics: ["Story Games", "Esports", "Open World", "Online Multiplayer"],
+    },
+  ],
+};
+
+const roomPulse: Record<Room, string[]> = {
+  Film: [
+    "🔥 Marvel fatigue",
+    "🎬 Best actor working today",
+    "⭐ Overrated classics",
+    "🍿 Best film of the 2020s",
+  ],
+  Television: [
+    "📺 HBO vs Netflix",
+    "🔥 Best ending ever",
+    "🎭 Best anti-hero",
+    "⭐ Shows that fell off",
+  ],
+  Sports: [
+    "⚽ Ballon d'Or debate",
+    "🔥 Haaland big games",
+    "🏆 World Cup predictions",
+    "🥊 UFC title fights",
+  ],
+  Politics: [
+    "🗳️ Youth voting",
+    "🌍 World leadership",
+    "📊 Public trust",
+    "⚖️ Policy vs personality",
+  ],
+  Society: [
+    "🎓 Are degrees worth it?",
+    "💼 Work culture",
+    "💰 Money pressure",
+    "📱 Social media behavior",
+  ],
+  "Media & Culture": [
+    "📱 TikTok attention span",
+    "🎥 Influencer culture",
+    "📰 News trust",
+    "🔥 Cancel culture debates",
+  ],
+  Music: [
+    "🎧 Album rankings",
+    "🔥 Best rapper debate",
+    "🎤 Concert prices",
+    "⭐ Artists who fell off",
+  ],
+  Gaming: [
+    "🎮 Story games vs online",
+    "🔥 Console wars",
+    "🏆 Esports debate",
+    "🕹️ Games worth buying",
+  ],
 };
 
 const starterPosts: Post[] = [
@@ -81,7 +228,9 @@ const starterPosts: Post[] = [
     id: 1,
     type: "Debate",
     room: "Film",
+    topic: "Superhero Films",
     subtopic: "Marvel",
+    angle: "Fallen Off",
     title: "Has Marvel lost its cultural power after Endgame?",
     body: "The movies still get attention, but the excitement does not feel the same anymore.",
     author: "Jalal",
@@ -109,7 +258,9 @@ const starterPosts: Post[] = [
     id: 2,
     type: "Opinion",
     room: "Sports",
-    subtopic: "Football",
+    topic: "Football",
+    subtopic: "Player Debates",
+    angle: "Hot Take",
     title: "Football debates are sometimes better than the match itself",
     body: "The arguments, predictions, and reactions after games can be more entertaining than the actual 90 minutes.",
     author: "Omar",
@@ -131,7 +282,9 @@ const starterPosts: Post[] = [
     id: 3,
     type: "Review",
     room: "Television",
+    topic: "Streaming Platforms",
     subtopic: "HBO",
+    angle: "Better Than",
     title: "Prestige television still feels stronger than most streaming originals",
     body: "Some platforms release a lot of shows, but only a few feel like they will be remembered years later.",
     author: "Sara",
@@ -146,7 +299,9 @@ const starterPosts: Post[] = [
     id: 4,
     type: "Debate",
     room: "Media & Culture",
+    topic: "Internet Culture",
     subtopic: "TikTok",
+    angle: "Change My Mind",
     title: "Short-form content made people worse at real discussions",
     body: "Everything becomes a quick reaction instead of a real conversation.",
     author: "Nadine",
@@ -161,7 +316,9 @@ const starterPosts: Post[] = [
     id: 5,
     type: "Question",
     room: "Society",
+    topic: "Modern Life",
     subtopic: "Education",
+    angle: "Worth It",
     title: "Are degrees still worth the same as they used to be?",
     body: "A lot of people are studying for years, but the job market feels more confusing than before.",
     author: "Adam",
@@ -176,7 +333,9 @@ const starterPosts: Post[] = [
     id: 6,
     type: "Poll",
     room: "Music",
+    topic: "Music Culture",
     subtopic: "Albums",
+    angle: "Ranking",
     title: "Do albums still matter in the streaming era?",
     body: "Some listeners still care about full projects, but many people only follow singles and playlists now.",
     author: "Maya",
@@ -191,7 +350,9 @@ const starterPosts: Post[] = [
     id: 7,
     type: "Opinion",
     room: "Gaming",
+    topic: "Game Types",
     subtopic: "Story Games",
+    angle: "Better Than",
     title: "Story games create stronger memories than online multiplayer",
     body: "Online games are fun, but a strong story can stay with you for years.",
     author: "Kareem",
@@ -206,7 +367,9 @@ const starterPosts: Post[] = [
     id: 8,
     type: "Debate",
     room: "Politics",
+    topic: "Government",
     subtopic: "Leadership",
+    angle: "Who Wins",
     title: "Do people vote for policies or personalities?",
     body: "Sometimes campaigns feel more focused on image, emotion, and identity than actual plans.",
     author: "Lina",
@@ -219,6 +382,20 @@ const starterPosts: Post[] = [
   },
 ];
 
+function getFirstTopic(room: Room) {
+  return roomStructure[room][0].name;
+}
+
+function getFirstSubtopic(room: Room, topic: string) {
+  return (
+    roomStructure[room].find((item) => item.name === topic)?.subtopics[0] || ""
+  );
+}
+
+function getSubtopics(room: Room, topic: string) {
+  return roomStructure[room].find((item) => item.name === topic)?.subtopics || [];
+}
+
 export default function Home() {
   const [selectedType, setSelectedType] = useState<PostType | "For You">(
     "For You"
@@ -226,12 +403,18 @@ export default function Home() {
   const [selectedRoom, setSelectedRoom] = useState<Room | "All Rooms">(
     "All Rooms"
   );
+  const [selectedTopic, setSelectedTopic] = useState("All Topics");
+  const [selectedAngle, setSelectedAngle] = useState("All Angles");
 
   const [posts, setPosts] = useState<Post[]>(starterPosts);
 
   const [newType, setNewType] = useState<PostType>("Debate");
   const [newRoom, setNewRoom] = useState<Room>("Film");
-  const [newSubtopic, setNewSubtopic] = useState("Marvel");
+  const [newTopic, setNewTopic] = useState(getFirstTopic("Film"));
+  const [newSubtopic, setNewSubtopic] = useState(
+    getFirstSubtopic("Film", getFirstTopic("Film"))
+  );
+  const [newAngle, setNewAngle] = useState("Hot Take");
   const [newStance, setNewStance] = useState<Stance>("Convince Me");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -239,20 +422,58 @@ export default function Home() {
   const [replyText, setReplyText] = useState<Record<number, string>>({});
   const [replyStance, setReplyStance] = useState<Record<number, Stance>>({});
 
+  const availableTopics =
+    selectedRoom === "All Rooms"
+      ? []
+      : roomStructure[selectedRoom].map((topic) => topic.name);
+
+  const pulseItems =
+    selectedRoom === "All Rooms"
+      ? [
+          "🔥 Most divided takes today",
+          "⚖️ Best arguments from all rooms",
+          "📊 Polls getting attention",
+          "💬 Debates people are joining",
+        ]
+      : roomPulse[selectedRoom];
+
   const filteredPosts = useMemo(() => {
     return posts.filter((post) => {
       const typeMatch =
         selectedType === "For You" ? true : post.type === selectedType;
       const roomMatch =
         selectedRoom === "All Rooms" ? true : post.room === selectedRoom;
+      const topicMatch =
+        selectedTopic === "All Topics" ? true : post.topic === selectedTopic;
+      const angleMatch =
+        selectedAngle === "All Angles" ? true : post.angle === selectedAngle;
 
-      return typeMatch && roomMatch;
+      return typeMatch && roomMatch && topicMatch && angleMatch;
     });
-  }, [posts, selectedType, selectedRoom]);
+  }, [posts, selectedType, selectedRoom, selectedTopic, selectedAngle]);
 
   function chooseAction(type: PostType) {
     setSelectedType(type);
     setNewType(type);
+  }
+
+  function handleSelectRoom(room: Room | "All Rooms") {
+    setSelectedRoom(room);
+    setSelectedTopic("All Topics");
+  }
+
+  function handleNewRoomChange(room: Room) {
+    const firstTopic = getFirstTopic(room);
+    const firstSubtopic = getFirstSubtopic(room, firstTopic);
+
+    setNewRoom(room);
+    setNewTopic(firstTopic);
+    setNewSubtopic(firstSubtopic);
+  }
+
+  function handleNewTopicChange(topic: string) {
+    setNewTopic(topic);
+    setNewSubtopic(getFirstSubtopic(newRoom, topic));
   }
 
   function handleCreatePost(event: React.FormEvent<HTMLFormElement>) {
@@ -269,7 +490,9 @@ export default function Home() {
       id: Date.now(),
       type: newType,
       room: newRoom,
+      topic: newTopic,
       subtopic: newSubtopic,
+      angle: newAngle,
       title,
       body,
       author: "You",
@@ -334,13 +557,13 @@ export default function Home() {
           <div>
             <p className="text-xl font-black tracking-tight">TakeRoom</p>
             <p className="text-xs text-zinc-500">
-              Debate the take, not the person.
+              Find out where the room stands.
             </p>
           </div>
 
           <div className="hidden flex-1 md:block">
             <input
-              placeholder="Search rooms, takes, reviews, debates..."
+              placeholder="Search rooms, topics, takes, reviews, debates..."
               className="w-full rounded-full border border-zinc-800 bg-zinc-950 px-5 py-3 text-sm outline-none placeholder:text-zinc-600 focus:border-orange-500"
             />
           </div>
@@ -361,7 +584,7 @@ export default function Home() {
 
               <div className="space-y-2">
                 <button
-                  onClick={() => setSelectedRoom("All Rooms")}
+                  onClick={() => handleSelectRoom("All Rooms")}
                   className={`w-full rounded-2xl px-4 py-3 text-left text-sm font-bold ${
                     selectedRoom === "All Rooms"
                       ? "bg-orange-500 text-white"
@@ -374,7 +597,7 @@ export default function Home() {
                 {rooms.map((room) => (
                   <button
                     key={room}
-                    onClick={() => setSelectedRoom(room)}
+                    onClick={() => handleSelectRoom(room)}
                     className={`w-full rounded-2xl px-4 py-3 text-left text-sm font-bold ${
                       selectedRoom === room
                         ? "bg-orange-500 text-white"
@@ -389,11 +612,13 @@ export default function Home() {
 
             <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-4">
               <h2 className="mb-3 text-sm font-black uppercase tracking-widest text-zinc-500">
-                Unique Feature
+                How it works
               </h2>
               <p className="text-sm leading-6 text-zinc-400">
-                <span className="font-bold text-white">Stance Meter</span> shows
-                how divided people are instead of only counting likes.
+                Pick a <span className="font-bold text-white">Room</span>, then
+                choose a <span className="font-bold text-white">Topic</span>, a{" "}
+                <span className="font-bold text-white">Subtopic</span>, and a{" "}
+                <span className="font-bold text-white">Debate Angle</span>.
               </p>
             </div>
           </div>
@@ -402,16 +627,16 @@ export default function Home() {
         <section className="space-y-6">
           <section className="rounded-3xl border border-zinc-800 bg-gradient-to-br from-zinc-950 to-zinc-900 p-6 md:p-8">
             <p className="mb-3 text-xs font-black uppercase tracking-widest text-orange-400">
-              Debate • Opinion • Review • Poll • Question
+              Post a take • Pick a side • Change minds
             </p>
 
             <h1 className="max-w-3xl text-4xl font-black tracking-tight md:text-6xl">
-              A room for hot takes, reviews, and real debate.
+              Debate by rooms, topics, and sides.
             </h1>
 
             <p className="mt-5 max-w-2xl text-zinc-400">
-              Choose what you want to do, pick a room, filter by subtopic, and
-              see where people stand through the Stance Meter.
+              TakeRoom organizes opinions by what people want to do, what they
+              are talking about, and where they stand.
             </p>
           </section>
 
@@ -469,11 +694,36 @@ export default function Home() {
               ))}
             </div>
 
+            <div className="mb-4 grid gap-3 md:grid-cols-2">
+              <select
+                value={selectedTopic}
+                onChange={(event) => setSelectedTopic(event.target.value)}
+                disabled={selectedRoom === "All Rooms"}
+                className="rounded-2xl border border-zinc-800 bg-black px-4 py-3 text-sm outline-none disabled:text-zinc-600 focus:border-orange-500"
+              >
+                <option>All Topics</option>
+                {availableTopics.map((topic) => (
+                  <option key={topic}>{topic}</option>
+                ))}
+              </select>
+
+              <select
+                value={selectedAngle}
+                onChange={(event) => setSelectedAngle(event.target.value)}
+                className="rounded-2xl border border-zinc-800 bg-black px-4 py-3 text-sm outline-none focus:border-orange-500"
+              >
+                <option>All Angles</option>
+                {debateAngles.map((angle) => (
+                  <option key={angle}>{angle}</option>
+                ))}
+              </select>
+            </div>
+
             {filteredPosts.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-zinc-700 bg-black p-8 text-center">
                 <h2 className="text-2xl font-black">No takes here yet.</h2>
                 <p className="mt-3 text-zinc-500">
-                  Start the first discussion in this room.
+                  Start the first discussion in this room, topic, or angle.
                 </p>
               </div>
             ) : (
@@ -491,7 +741,13 @@ export default function Home() {
                         {post.room}
                       </span>
                       <span className="rounded-full bg-zinc-800 px-3 py-1 text-zinc-300">
+                        {post.topic}
+                      </span>
+                      <span className="rounded-full bg-zinc-800 px-3 py-1 text-zinc-300">
                         {post.subtopic}
+                      </span>
+                      <span className="rounded-full bg-zinc-800 px-3 py-1 text-zinc-300">
+                        {post.angle}
                       </span>
                       <span className="text-zinc-500">by {post.author}</span>
                     </div>
@@ -503,7 +759,7 @@ export default function Home() {
                     <div className="mt-5 rounded-2xl bg-black p-4">
                       <div className="mb-2 flex items-center justify-between text-sm">
                         <span className="font-black text-white">
-                          Stance Meter
+                          This Take Split the Room
                         </span>
                         <span className="text-zinc-500">{post.stance}</span>
                       </div>
@@ -528,7 +784,7 @@ export default function Home() {
                     </div>
 
                     <section className="mt-5 rounded-2xl border border-zinc-800 bg-black p-4">
-                      <h3 className="font-black">Replies</h3>
+                      <h3 className="font-black">Side-based replies</h3>
 
                       <form
                         onSubmit={(event) => handleCreateReply(event, post.id)}
@@ -544,10 +800,9 @@ export default function Home() {
                           }
                           className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm outline-none focus:border-orange-500"
                         >
-                          <option>Agree</option>
-                          <option>Disagree</option>
-                          <option>Mixed</option>
-                          <option>Convince Me</option>
+                          {stances.map((stance) => (
+                            <option key={stance}>{stance}</option>
+                          ))}
                         </select>
 
                         <textarea
@@ -568,32 +823,45 @@ export default function Home() {
                         </button>
                       </form>
 
-                      <div className="mt-5 space-y-3">
-                        {post.replies.length === 0 ? (
-                          <p className="text-sm text-zinc-500">
-                            No visible replies yet. Be the first to respond.
-                          </p>
-                        ) : (
-                          post.replies.map((reply) => (
+                      <div className="mt-5 grid gap-3">
+                        {stances.map((stance) => {
+                          const matchingReplies = post.replies.filter(
+                            (reply) => reply.stance === stance
+                          );
+
+                          return (
                             <div
-                              key={reply.id}
+                              key={stance}
                               className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4"
                             >
-                              <div className="mb-2 flex flex-wrap items-center gap-2 text-xs font-bold">
-                                <span className="rounded-full bg-zinc-800 px-3 py-1 text-zinc-300">
-                                  {reply.stance}
-                                </span>
-                                <span className="text-zinc-500">
-                                  by {reply.author}
-                                </span>
-                              </div>
-
-                              <p className="text-sm leading-6 text-zinc-300">
-                                {reply.body}
+                              <p className="mb-3 text-sm font-black">
+                                {stance} Side
                               </p>
+
+                              {matchingReplies.length === 0 ? (
+                                <p className="text-sm text-zinc-600">
+                                  No replies on this side yet.
+                                </p>
+                              ) : (
+                                <div className="space-y-3">
+                                  {matchingReplies.map((reply) => (
+                                    <div
+                                      key={reply.id}
+                                      className="rounded-2xl bg-black p-3"
+                                    >
+                                      <p className="mb-1 text-xs font-bold text-zinc-500">
+                                        by {reply.author}
+                                      </p>
+                                      <p className="text-sm leading-6 text-zinc-300">
+                                        {reply.body}
+                                      </p>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </div>
-                          ))
-                        )}
+                          );
+                        })}
                       </div>
                     </section>
                   </article>
@@ -620,11 +888,7 @@ export default function Home() {
 
               <select
                 value={newRoom}
-                onChange={(event) => {
-                  const room = event.target.value as Room;
-                  setNewRoom(room);
-                  setNewSubtopic(subtopics[room][0]);
-                }}
+                onChange={(event) => handleNewRoomChange(event.target.value as Room)}
                 className="w-full rounded-2xl border border-zinc-800 bg-black px-4 py-3 text-sm outline-none focus:border-orange-500"
               >
                 {rooms.map((room) => (
@@ -633,12 +897,32 @@ export default function Home() {
               </select>
 
               <select
+                value={newTopic}
+                onChange={(event) => handleNewTopicChange(event.target.value)}
+                className="w-full rounded-2xl border border-zinc-800 bg-black px-4 py-3 text-sm outline-none focus:border-orange-500"
+              >
+                {roomStructure[newRoom].map((topic) => (
+                  <option key={topic.name}>{topic.name}</option>
+                ))}
+              </select>
+
+              <select
                 value={newSubtopic}
                 onChange={(event) => setNewSubtopic(event.target.value)}
                 className="w-full rounded-2xl border border-zinc-800 bg-black px-4 py-3 text-sm outline-none focus:border-orange-500"
               >
-                {subtopics[newRoom].map((topic) => (
-                  <option key={topic}>{topic}</option>
+                {getSubtopics(newRoom, newTopic).map((subtopic) => (
+                  <option key={subtopic}>{subtopic}</option>
+                ))}
+              </select>
+
+              <select
+                value={newAngle}
+                onChange={(event) => setNewAngle(event.target.value)}
+                className="w-full rounded-2xl border border-zinc-800 bg-black px-4 py-3 text-sm outline-none focus:border-orange-500"
+              >
+                {debateAngles.map((angle) => (
+                  <option key={angle}>{angle}</option>
                 ))}
               </select>
 
@@ -647,10 +931,9 @@ export default function Home() {
                 onChange={(event) => setNewStance(event.target.value as Stance)}
                 className="w-full rounded-2xl border border-zinc-800 bg-black px-4 py-3 text-sm outline-none focus:border-orange-500"
               >
-                <option>Agree</option>
-                <option>Disagree</option>
-                <option>Mixed</option>
-                <option>Convince Me</option>
+                {stances.map((stance) => (
+                  <option key={stance}>{stance}</option>
+                ))}
               </select>
 
               <input
@@ -675,21 +958,31 @@ export default function Home() {
           </section>
 
           <section className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5">
-            <h2 className="text-xl font-black">Trending Rooms</h2>
+            <h2 className="text-xl font-black">
+              {selectedRoom === "All Rooms" ? "TakeRoom Pulse" : `${selectedRoom} Room Pulse`}
+            </h2>
 
             <div className="mt-4 space-y-3 text-sm">
-              <p className="rounded-2xl bg-zinc-900 p-3">
-                🔥 Film: Marvel fatigue
-              </p>
-              <p className="rounded-2xl bg-zinc-900 p-3">
-                ⚽ Sports: Ballon d&apos;Or debate
-              </p>
-              <p className="rounded-2xl bg-zinc-900 p-3">
-                📱 Media: TikTok culture
-              </p>
-              <p className="rounded-2xl bg-zinc-900 p-3">
-                🎧 Music: Album rankings
-              </p>
+              {pulseItems.map((item) => (
+                <p key={item} className="rounded-2xl bg-zinc-900 p-3">
+                  {item}
+                </p>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5">
+            <h2 className="text-xl font-black">Trending Angles</h2>
+
+            <div className="mt-4 flex flex-wrap gap-2 text-sm">
+              {debateAngles.slice(0, 7).map((angle) => (
+                <span
+                  key={angle}
+                  className="rounded-full bg-zinc-900 px-3 py-2 text-zinc-300"
+                >
+                  {angle}
+                </span>
+              ))}
             </div>
           </section>
 
@@ -698,7 +991,7 @@ export default function Home() {
             <ul className="mt-4 space-y-2 text-sm text-zinc-400">
               <li>Debate the idea, not the person.</li>
               <li>No hate speech or threats.</li>
-              <li>Reviews should explain the rating.</li>
+              <li>Choose the correct topic and debate angle.</li>
               <li>Strong opinions are welcome. Personal attacks are not.</li>
             </ul>
           </section>
