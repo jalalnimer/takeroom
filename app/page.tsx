@@ -16,6 +16,8 @@ type Room =
 
 type Stance = "Agree" | "Disagree" | "Mixed" | "Convince Me";
 
+type FeedMode = "For You" | "Hot" | "New" | "Controversial";
+
 type Reply = {
   id: number;
   author: string;
@@ -39,6 +41,8 @@ type Post = {
   disagree: number;
   replies: Reply[];
 };
+
+const feedModes: FeedMode[] = ["For You", "Hot", "New", "Controversial"];
 
 const postTypes: PostType[] = [
   "Debate",
@@ -74,7 +78,7 @@ const debateAngles = [
   "Who Wins",
 ];
 
-const popularTopics: Record<Room, string[]> = {
+const defaultPopularTopics: Record<Room, string[]> = {
   Film: [
     "Marvel fatigue",
     "Best Nolan film",
@@ -284,9 +288,18 @@ const starterPosts: Post[] = [
   },
 ];
 
+function getControversyScore(post: Post) {
+  return Math.abs(post.agree - post.disagree);
+}
+
+function getActivityScore(post: Post) {
+  return post.heat + post.replyCount * 2;
+}
+
 export default function Home() {
-  const [selectedType, setSelectedType] = useState<PostType | "For You">(
-    "For You"
+  const [feedMode, setFeedMode] = useState<FeedMode>("For You");
+  const [selectedType, setSelectedType] = useState<PostType | "All Types">(
+    "All Types"
   );
   const [selectedRoom, setSelectedRoom] = useState<Room | "All Rooms">(
     "All Rooms"
@@ -307,8 +320,33 @@ export default function Home() {
   const [replyText, setReplyText] = useState<Record<number, string>>({});
   const [replyStance, setReplyStance] = useState<Record<number, Stance>>({});
 
+  const pulseTopics = useMemo(() => {
+    const topicScores = new Map<string, number>();
+
+    posts.forEach((post) => {
+      const roomMatches =
+        selectedRoom === "All Rooms" ? true : post.room === selectedRoom;
+
+      if (!roomMatches) {
+        return;
+      }
+
+      const currentScore = topicScores.get(post.topic) || 0;
+      const postScore = getActivityScore(post) + 10;
+
+      topicScores.set(post.topic, currentScore + postScore);
+    });
+
+    return Array.from(topicScores.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([topic, score]) => ({ topic, score }));
+  }, [posts, selectedRoom]);
+
   const visibleTopicSuggestions =
-    selectedRoom === "All Rooms"
+    pulseTopics.length > 0
+      ? pulseTopics.map((item) => item.topic)
+      : selectedRoom === "All Rooms"
       ? [
           "Marvel fatigue",
           "Haaland big games",
@@ -316,14 +354,22 @@ export default function Home() {
           "TikTok attention span",
           "Album rankings",
         ]
-      : popularTopics[selectedRoom];
+      : defaultPopularTopics[selectedRoom];
 
-  const createTopicSuggestions = popularTopics[newRoom];
+  const createTopicSuggestions = useMemo(() => {
+    const roomPostTopics = posts
+      .filter((post) => post.room === newRoom)
+      .map((post) => post.topic);
+
+    return Array.from(
+      new Set([...roomPostTopics, ...defaultPopularTopics[newRoom]])
+    ).slice(0, 6);
+  }, [posts, newRoom]);
 
   const filteredPosts = useMemo(() => {
-    return posts.filter((post) => {
+    const matchingPosts = posts.filter((post) => {
       const typeMatch =
-        selectedType === "For You" ? true : post.type === selectedType;
+        selectedType === "All Types" ? true : post.type === selectedType;
       const roomMatch =
         selectedRoom === "All Rooms" ? true : post.room === selectedRoom;
       const topicMatch =
@@ -333,7 +379,23 @@ export default function Home() {
 
       return typeMatch && roomMatch && topicMatch && angleMatch;
     });
-  }, [posts, selectedType, selectedRoom, selectedTopic, selectedAngle]);
+
+    const sortedPosts = [...matchingPosts];
+
+    if (feedMode === "Hot" || feedMode === "For You") {
+      sortedPosts.sort((a, b) => getActivityScore(b) - getActivityScore(a));
+    }
+
+    if (feedMode === "New") {
+      sortedPosts.sort((a, b) => b.id - a.id);
+    }
+
+    if (feedMode === "Controversial") {
+      sortedPosts.sort((a, b) => getControversyScore(a) - getControversyScore(b));
+    }
+
+    return sortedPosts;
+  }, [posts, selectedType, selectedRoom, selectedTopic, selectedAngle, feedMode]);
 
   function chooseAction(type: PostType) {
     setSelectedType(type);
@@ -347,7 +409,7 @@ export default function Home() {
 
   function handleNewRoomChange(room: Room) {
     setNewRoom(room);
-    setNewTopic(popularTopics[room][0]);
+    setNewTopic(defaultPopularTopics[room][0]);
   }
 
   function handleCreatePost(event: React.FormEvent<HTMLFormElement>) {
@@ -412,6 +474,7 @@ export default function Home() {
         return {
           ...post,
           replyCount: post.replyCount + 1,
+          heat: post.heat + 2,
           replies: [newReply, ...post.replies],
         };
       })
@@ -488,8 +551,8 @@ export default function Home() {
                 The TakeRoom System
               </h2>
               <p className="text-sm leading-6 text-zinc-400">
-                Rooms stay organized, but topics are open. Users can choose a
-                popular topic or create their own.
+                Rooms stay organized, but topics are open. Popular topics rise
+                through activity, replies, and debate.
               </p>
             </div>
           </div>
@@ -539,25 +602,41 @@ export default function Home() {
 
           <section className="rounded-3xl border border-zinc-800 bg-zinc-950 p-4">
             <div className="mb-4 flex flex-wrap gap-2">
+              {feedModes.map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setFeedMode(mode)}
+                  className={`rounded-full px-4 py-2 text-sm font-black ${
+                    feedMode === mode
+                      ? "bg-white text-black"
+                      : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800"
+                  }`}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+
+            <div className="mb-4 flex flex-wrap gap-2">
               <button
-                onClick={() => setSelectedType("For You")}
-                className={`rounded-full px-4 py-2 text-sm font-black ${
-                  selectedType === "For You"
-                    ? "bg-white text-black"
-                    : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800"
+                onClick={() => setSelectedType("All Types")}
+                className={`rounded-full px-4 py-2 text-sm font-bold ${
+                  selectedType === "All Types"
+                    ? "bg-orange-500 text-white"
+                    : "bg-black text-zinc-400 hover:bg-zinc-900"
                 }`}
               >
-                For You
+                All Types
               </button>
 
               {postTypes.map((type) => (
                 <button
                   key={type}
                   onClick={() => setSelectedType(type)}
-                  className={`rounded-full px-4 py-2 text-sm font-black ${
+                  className={`rounded-full px-4 py-2 text-sm font-bold ${
                     selectedType === type
-                      ? "bg-white text-black"
-                      : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800"
+                      ? "bg-orange-500 text-white"
+                      : "bg-black text-zinc-400 hover:bg-zinc-900"
                   }`}
                 >
                   {type}
@@ -663,7 +742,12 @@ export default function Home() {
                     <div className="mt-5 flex flex-wrap gap-4 text-sm text-zinc-400">
                       <span>🔥 {post.heat} heat</span>
                       <span>💬 {post.replyCount} replies</span>
-                      <span>⚖️ Join debate</span>
+                      <span>
+                        ⚡ Activity {getActivityScore(post)}
+                      </span>
+                      <span>
+                        ⚖️ Split {100 - getControversyScore(post)}%
+                      </span>
                     </div>
 
                     <section className="mt-5 rounded-2xl border border-zinc-800 bg-black p-4">
@@ -856,17 +940,20 @@ export default function Home() {
             </h2>
 
             <p className="mt-2 text-sm text-zinc-500">
-              Popular topics people are debating right now.
+              Generated from post activity, replies, and heat.
             </p>
 
             <div className="mt-4 space-y-3 text-sm">
-              {visibleTopicSuggestions.map((topic) => (
+              {pulseTopics.map((item) => (
                 <button
-                  key={topic}
-                  onClick={() => setSelectedTopic(topic)}
+                  key={item.topic}
+                  onClick={() => setSelectedTopic(item.topic)}
                   className="w-full rounded-2xl bg-zinc-900 p-3 text-left font-bold text-zinc-300 hover:bg-zinc-800"
                 >
-                  🔥 {topic}
+                  <span>🔥 {item.topic}</span>
+                  <span className="mt-1 block text-xs text-zinc-500">
+                    Pulse score: {item.score}
+                  </span>
                 </button>
               ))}
             </div>
