@@ -16,6 +16,13 @@ type Room =
 
 type Stance = "Agree" | "Disagree" | "Mixed" | "Convince Me";
 
+type Reply = {
+  id: number;
+  author: string;
+  stance: Stance;
+  body: string;
+};
+
 type Post = {
   id: number;
   type: PostType;
@@ -26,9 +33,10 @@ type Post = {
   author: string;
   stance: Stance;
   heat: number;
-  replies: number;
+  replyCount: number;
   agree: number;
   disagree: number;
+  replies: Reply[];
 };
 
 const postTypes: PostType[] = [
@@ -79,9 +87,23 @@ const starterPosts: Post[] = [
     author: "Jalal",
     stance: "Convince Me",
     heat: 91,
-    replies: 42,
+    replyCount: 42,
     agree: 64,
     disagree: 36,
+    replies: [
+      {
+        id: 101,
+        author: "Omar",
+        stance: "Agree",
+        body: "The hype is not completely gone, but it definitely does not feel like an event anymore.",
+      },
+      {
+        id: 102,
+        author: "Sara",
+        stance: "Disagree",
+        body: "I think people still care. They just became more selective with what they watch.",
+      },
+    ],
   },
   {
     id: 2,
@@ -93,9 +115,17 @@ const starterPosts: Post[] = [
     author: "Omar",
     stance: "Agree",
     heat: 78,
-    replies: 26,
+    replyCount: 26,
     agree: 72,
     disagree: 28,
+    replies: [
+      {
+        id: 201,
+        author: "Adam",
+        stance: "Mixed",
+        body: "Depends on the match. Some games are boring, but the debates after are always funny.",
+      },
+    ],
   },
   {
     id: 3,
@@ -107,9 +137,10 @@ const starterPosts: Post[] = [
     author: "Sara",
     stance: "Mixed",
     heat: 84,
-    replies: 31,
+    replyCount: 31,
     agree: 55,
     disagree: 45,
+    replies: [],
   },
   {
     id: 4,
@@ -121,9 +152,10 @@ const starterPosts: Post[] = [
     author: "Nadine",
     stance: "Agree",
     heat: 96,
-    replies: 58,
+    replyCount: 58,
     agree: 68,
     disagree: 32,
+    replies: [],
   },
   {
     id: 5,
@@ -135,9 +167,10 @@ const starterPosts: Post[] = [
     author: "Adam",
     stance: "Mixed",
     heat: 73,
-    replies: 19,
+    replyCount: 19,
     agree: 52,
     disagree: 48,
+    replies: [],
   },
   {
     id: 6,
@@ -149,9 +182,10 @@ const starterPosts: Post[] = [
     author: "Maya",
     stance: "Convince Me",
     heat: 80,
-    replies: 22,
+    replyCount: 22,
     agree: 59,
     disagree: 41,
+    replies: [],
   },
   {
     id: 7,
@@ -163,9 +197,10 @@ const starterPosts: Post[] = [
     author: "Kareem",
     stance: "Agree",
     heat: 69,
-    replies: 15,
+    replyCount: 15,
     agree: 75,
     disagree: 25,
+    replies: [],
   },
   {
     id: 8,
@@ -177,9 +212,10 @@ const starterPosts: Post[] = [
     author: "Lina",
     stance: "Convince Me",
     heat: 88,
-    replies: 37,
+    replyCount: 37,
     agree: 61,
     disagree: 39,
+    replies: [],
   },
 ];
 
@@ -199,6 +235,9 @@ export default function Home() {
   const [newStance, setNewStance] = useState<Stance>("Convince Me");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+
+  const [replyText, setReplyText] = useState<Record<number, string>>({});
+  const [replyStance, setReplyStance] = useState<Record<number, Stance>>({});
 
   const filteredPosts = useMemo(() => {
     return posts.filter((post) => {
@@ -236,14 +275,56 @@ export default function Home() {
       author: "You",
       stance: newStance,
       heat: Math.floor(Math.random() * 30) + 70,
-      replies: 0,
+      replyCount: 0,
       agree,
       disagree,
+      replies: [],
     };
 
     setPosts([newPost, ...posts]);
     setTitle("");
     setBody("");
+  }
+
+  function handleCreateReply(
+    event: React.FormEvent<HTMLFormElement>,
+    postId: number
+  ) {
+    event.preventDefault();
+
+    const text = replyText[postId];
+
+    if (!text || !text.trim()) {
+      return;
+    }
+
+    const stance = replyStance[postId] || "Agree";
+
+    setPosts((currentPosts) =>
+      currentPosts.map((post) => {
+        if (post.id !== postId) {
+          return post;
+        }
+
+        const newReply: Reply = {
+          id: Date.now(),
+          author: "You",
+          stance,
+          body: text,
+        };
+
+        return {
+          ...post,
+          replyCount: post.replyCount + 1,
+          replies: [newReply, ...post.replies],
+        };
+      })
+    );
+
+    setReplyText({
+      ...replyText,
+      [postId]: "",
+    });
   }
 
   return (
@@ -442,9 +523,79 @@ export default function Home() {
 
                     <div className="mt-5 flex flex-wrap gap-4 text-sm text-zinc-400">
                       <span>🔥 {post.heat} heat</span>
-                      <span>💬 {post.replies} replies</span>
+                      <span>💬 {post.replyCount} replies</span>
                       <span>⚖️ Join debate</span>
                     </div>
+
+                    <section className="mt-5 rounded-2xl border border-zinc-800 bg-black p-4">
+                      <h3 className="font-black">Replies</h3>
+
+                      <form
+                        onSubmit={(event) => handleCreateReply(event, post.id)}
+                        className="mt-4 space-y-3"
+                      >
+                        <select
+                          value={replyStance[post.id] || "Agree"}
+                          onChange={(event) =>
+                            setReplyStance({
+                              ...replyStance,
+                              [post.id]: event.target.value as Stance,
+                            })
+                          }
+                          className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm outline-none focus:border-orange-500"
+                        >
+                          <option>Agree</option>
+                          <option>Disagree</option>
+                          <option>Mixed</option>
+                          <option>Convince Me</option>
+                        </select>
+
+                        <textarea
+                          value={replyText[post.id] || ""}
+                          onChange={(event) =>
+                            setReplyText({
+                              ...replyText,
+                              [post.id]: event.target.value,
+                            })
+                          }
+                          placeholder="Write your reply..."
+                          rows={3}
+                          className="w-full resize-none rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm outline-none placeholder:text-zinc-600 focus:border-orange-500"
+                        />
+
+                        <button className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-black hover:bg-zinc-200">
+                          Post Reply
+                        </button>
+                      </form>
+
+                      <div className="mt-5 space-y-3">
+                        {post.replies.length === 0 ? (
+                          <p className="text-sm text-zinc-500">
+                            No visible replies yet. Be the first to respond.
+                          </p>
+                        ) : (
+                          post.replies.map((reply) => (
+                            <div
+                              key={reply.id}
+                              className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4"
+                            >
+                              <div className="mb-2 flex flex-wrap items-center gap-2 text-xs font-bold">
+                                <span className="rounded-full bg-zinc-800 px-3 py-1 text-zinc-300">
+                                  {reply.stance}
+                                </span>
+                                <span className="text-zinc-500">
+                                  by {reply.author}
+                                </span>
+                              </div>
+
+                              <p className="text-sm leading-6 text-zinc-300">
+                                {reply.body}
+                              </p>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </section>
                   </article>
                 ))}
               </div>
