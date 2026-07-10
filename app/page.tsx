@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "./lib/supabase";
 
 type PostType = "Debate" | "Opinion" | "Review" | "Poll" | "Question";
 
@@ -19,14 +20,14 @@ type Stance = "Agree" | "Disagree" | "Mixed" | "Convince Me";
 type FeedMode = "For You" | "Hot" | "New" | "Controversial";
 
 type Reply = {
-  id: number;
+  id: string;
   author: string;
   stance: Stance;
   body: string;
 };
 
 type Post = {
-  id: number;
+  id: string;
   type: PostType;
   room: Room;
   topic: string;
@@ -40,6 +41,33 @@ type Post = {
   agree: number;
   disagree: number;
   replies: Reply[];
+};
+
+type DbPost = {
+  id: string;
+  created_at: string;
+  type: PostType;
+  room: Room;
+  topic: string;
+  angle: string;
+  title: string;
+  body: string;
+  author_name: string;
+  stance: Stance;
+  heat: number;
+  agree_count: number;
+  disagree_count: number;
+  mixed_count: number;
+  convince_me_count: number;
+};
+
+type DbReply = {
+  id: string;
+  post_id: string;
+  created_at: string;
+  author_name: string;
+  stance: Stance;
+  body: string;
 };
 
 const feedModes: FeedMode[] = ["For You", "Hot", "New", "Controversial"];
@@ -137,163 +165,40 @@ const defaultPopularTopics: Record<Room, string[]> = {
   ],
 };
 
-const starterPosts: Post[] = [
-  {
-    id: 1,
-    type: "Debate",
-    room: "Film",
-    topic: "Marvel fatigue",
-    angle: "Fallen Off",
-    title: "Has Marvel lost its cultural power after Endgame?",
-    body: "The movies still get attention, but the excitement does not feel the same anymore.",
-    author: "Jalal",
-    stance: "Convince Me",
-    heat: 91,
-    replyCount: 42,
-    agree: 64,
-    disagree: 36,
-    replies: [
-      {
-        id: 101,
-        author: "Omar",
-        stance: "Agree",
-        body: "The hype is not completely gone, but it definitely does not feel like an event anymore.",
-      },
-      {
-        id: 102,
-        author: "Sara",
-        stance: "Disagree",
-        body: "I think people still care. They just became more selective with what they watch.",
-      },
-    ],
-  },
-  {
-    id: 2,
-    type: "Opinion",
-    room: "Sports",
-    topic: "Haaland big games",
-    angle: "Hot Take",
-    title: "Haaland is judged too harshly in big matches",
-    body: "People expect him to score every single important game, but football does not work like that.",
-    author: "Omar",
-    stance: "Agree",
-    heat: 88,
-    replyCount: 29,
-    agree: 58,
-    disagree: 42,
-    replies: [
-      {
-        id: 201,
-        author: "Adam",
-        stance: "Mixed",
-        body: "I agree he gets too much hate, but the biggest players are always judged by the biggest nights.",
-      },
-    ],
-  },
-  {
-    id: 3,
-    type: "Review",
-    room: "Television",
-    topic: "HBO vs Netflix",
-    angle: "Better Than",
-    title: "HBO still makes shows feel like events",
-    body: "Netflix has quantity, but HBO still has a stronger reputation for prestige shows.",
-    author: "Sara",
-    stance: "Agree",
-    heat: 84,
-    replyCount: 31,
-    agree: 70,
-    disagree: 30,
-    replies: [],
-  },
-  {
-    id: 4,
-    type: "Debate",
-    room: "Media & Culture",
-    topic: "TikTok attention span",
-    angle: "Change My Mind",
-    title: "Short-form content made people worse at real discussions",
-    body: "Everything becomes a quick reaction instead of a real conversation.",
-    author: "Nadine",
-    stance: "Agree",
-    heat: 96,
-    replyCount: 58,
-    agree: 68,
-    disagree: 32,
-    replies: [],
-  },
-  {
-    id: 5,
-    type: "Question",
-    room: "Society",
-    topic: "University pressure",
-    angle: "Worth It",
-    title: "Are degrees still worth the same as they used to be?",
-    body: "A lot of people study for years, but the job market feels more confusing than before.",
-    author: "Adam",
-    stance: "Mixed",
-    heat: 73,
-    replyCount: 19,
-    agree: 52,
-    disagree: 48,
-    replies: [],
-  },
-  {
-    id: 6,
-    type: "Poll",
-    room: "Music",
-    topic: "Album rankings",
-    angle: "Ranking",
-    title: "Do albums still matter in the streaming era?",
-    body: "Some listeners still care about full projects, but many people only follow singles and playlists now.",
-    author: "Maya",
-    stance: "Convince Me",
-    heat: 80,
-    replyCount: 22,
-    agree: 59,
-    disagree: 41,
-    replies: [],
-  },
-  {
-    id: 7,
-    type: "Opinion",
-    room: "Gaming",
-    topic: "Story games vs online",
-    angle: "Better Than",
-    title: "Story games create stronger memories than online multiplayer",
-    body: "Online games are fun, but a strong story can stay with you for years.",
-    author: "Kareem",
-    stance: "Agree",
-    heat: 69,
-    replyCount: 15,
-    agree: 75,
-    disagree: 25,
-    replies: [],
-  },
-  {
-    id: 8,
-    type: "Debate",
-    room: "Politics",
-    topic: "Policy vs personality",
-    angle: "Who Wins",
-    title: "Do people vote for policies or personalities?",
-    body: "Sometimes campaigns feel more focused on image, emotion, and identity than actual plans.",
-    author: "Lina",
-    stance: "Convince Me",
-    heat: 88,
-    replyCount: 37,
-    agree: 61,
-    disagree: 39,
-    replies: [],
-  },
-];
-
 function getControversyScore(post: Post) {
   return Math.abs(post.agree - post.disagree);
 }
 
 function getActivityScore(post: Post) {
   return post.heat + post.replyCount * 2;
+}
+
+function mapDbPost(row: DbPost): Post {
+  return {
+    id: row.id,
+    type: row.type,
+    room: row.room,
+    topic: row.topic,
+    angle: row.angle,
+    title: row.title,
+    body: row.body,
+    author: row.author_name,
+    stance: row.stance,
+    heat: row.heat,
+    replyCount: 0,
+    agree: row.agree_count,
+    disagree: row.disagree_count,
+    replies: [],
+  };
+}
+
+function mapDbReply(row: DbReply): Reply {
+  return {
+    id: row.id,
+    author: row.author_name,
+    stance: row.stance,
+    body: row.body,
+  };
 }
 
 export default function Home() {
@@ -307,7 +212,8 @@ export default function Home() {
   const [selectedTopic, setSelectedTopic] = useState("All Topics");
   const [selectedAngle, setSelectedAngle] = useState("All Angles");
 
-  const [posts, setPosts] = useState<Post[]>(starterPosts);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [isLoadingPosts, setIsLoadingPosts] = useState(true);
 
   const [newType, setNewType] = useState<PostType>("Debate");
   const [newRoom, setNewRoom] = useState<Room>("Film");
@@ -317,8 +223,62 @@ export default function Home() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
 
-  const [replyText, setReplyText] = useState<Record<number, string>>({});
-  const [replyStance, setReplyStance] = useState<Record<number, Stance>>({});
+  const [replyText, setReplyText] = useState<Record<string, string>>({});
+  const [replyStance, setReplyStance] = useState<Record<string, Stance>>({});
+
+useEffect(() => {
+  async function loadPostsAndReplies() {
+    const { data: postData, error: postError } = await supabase
+      .from("posts")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (postError) {
+      console.error("Error loading posts:", postError);
+      setIsLoadingPosts(false);
+      return;
+    }
+
+    const { data: replyData, error: replyError } = await supabase
+      .from("replies")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (replyError) {
+      console.error("Error loading replies:", replyError);
+      setIsLoadingPosts(false);
+      return;
+    }
+
+    const repliesByPost = new Map<string, Reply[]>();
+
+    (replyData || []).forEach((reply) => {
+      const dbReply = reply as DbReply;
+      const currentReplies = repliesByPost.get(dbReply.post_id) || [];
+
+      repliesByPost.set(dbReply.post_id, [
+        ...currentReplies,
+        mapDbReply(dbReply),
+      ]);
+    });
+
+    const mappedPosts = (postData || []).map((post) => {
+      const mappedPost = mapDbPost(post as DbPost);
+      const replies = repliesByPost.get(mappedPost.id) || [];
+
+      return {
+        ...mappedPost,
+        replies,
+        replyCount: replies.length,
+      };
+    });
+
+    setPosts(mappedPosts);
+    setIsLoadingPosts(false);
+  }
+
+  loadPostsAndReplies();
+}, []);
 
   const pulseTopics = useMemo(() => {
     const topicScores = new Map<string, number>();
@@ -356,6 +316,14 @@ export default function Home() {
         ]
       : defaultPopularTopics[selectedRoom];
 
+  const pulseDisplayItems =
+    pulseTopics.length > 0
+      ? pulseTopics
+      : visibleTopicSuggestions.map((topic) => ({
+          topic,
+          score: 0,
+        }));
+
   const createTopicSuggestions = useMemo(() => {
     const roomPostTopics = posts
       .filter((post) => post.room === newRoom)
@@ -387,7 +355,7 @@ export default function Home() {
     }
 
     if (feedMode === "New") {
-      sortedPosts.sort((a, b) => b.id - a.id);
+      sortedPosts.sort((a, b) => Number(b.id) - Number(a.id));
     }
 
     if (feedMode === "Controversial") {
@@ -412,7 +380,7 @@ export default function Home() {
     setNewTopic(defaultPopularTopics[room][0]);
   }
 
-  function handleCreatePost(event: React.FormEvent<HTMLFormElement>) {
+  async function handleCreatePost(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!title.trim() || !body.trim() || !newTopic.trim()) {
@@ -421,70 +389,93 @@ export default function Home() {
 
     const agree = Math.floor(Math.random() * 45) + 35;
     const disagree = 100 - agree;
+    const heat = Math.floor(Math.random() * 30) + 70;
 
-    const newPost: Post = {
-      id: Date.now(),
-      type: newType,
-      room: newRoom,
-      topic: newTopic.trim(),
-      angle: newAngle,
-      title,
-      body,
-      author: "You",
-      stance: newStance,
-      heat: Math.floor(Math.random() * 30) + 70,
-      replyCount: 0,
-      agree,
-      disagree,
-      replies: [],
-    };
+    const { data, error } = await supabase
+      .from("posts")
+      .insert({
+        type: newType,
+        room: newRoom,
+        topic: newTopic.trim(),
+        angle: newAngle,
+        title,
+        body,
+        author_name: "You",
+        stance: newStance,
+        heat,
+        agree_count: agree,
+        disagree_count: disagree,
+        mixed_count: 0,
+        convince_me_count: 0,
+      })
+      .select()
+      .single();
 
-    setPosts([newPost, ...posts]);
+    if (error) {
+      console.error("Error creating post:", error);
+      alert("Could not save post. Check the console for details.");
+      return;
+    }
+
+    setPosts([mapDbPost(data as DbPost), ...posts]);
     setTitle("");
     setBody("");
   }
 
-  function handleCreateReply(
-    event: React.FormEvent<HTMLFormElement>,
-    postId: number
-  ) {
-    event.preventDefault();
+ 
+  async function handleCreateReply(
+  event: React.FormEvent<HTMLFormElement>,
+  postId: string
+) {
+  event.preventDefault();
 
-    const text = replyText[postId];
+  const text = replyText[postId];
 
-    if (!text || !text.trim()) {
-      return;
-    }
-
-    const stance = replyStance[postId] || "Agree";
-
-    setPosts((currentPosts) =>
-      currentPosts.map((post) => {
-        if (post.id !== postId) {
-          return post;
-        }
-
-        const newReply: Reply = {
-          id: Date.now(),
-          author: "You",
-          stance,
-          body: text,
-        };
-
-        return {
-          ...post,
-          replyCount: post.replyCount + 1,
-          heat: post.heat + 2,
-          replies: [newReply, ...post.replies],
-        };
-      })
-    );
-
-    setReplyText({
-      ...replyText,
-      [postId]: "",
-    });
+  if (!text || !text.trim()) {
+    return;
   }
+
+  const stance = replyStance[postId] || "Agree";
+
+  const { data, error } = await supabase
+    .from("replies")
+    .insert({
+      post_id: postId,
+      author_name: "You",
+      stance,
+      body: text.trim(),
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error creating reply:", error);
+    alert("Could not save reply. Check the console for details.");
+    return;
+  }
+
+  const newReply = mapDbReply(data as DbReply);
+
+  setPosts((currentPosts) =>
+    currentPosts.map((post) => {
+      if (post.id !== postId) {
+        return post;
+      }
+
+      return {
+        ...post,
+        replyCount: post.replyCount + 1,
+        heat: post.heat + 2,
+        replies: [newReply, ...post.replies],
+      };
+    })
+  );
+
+  setReplyText({
+    ...replyText,
+    [postId]: "",
+  });
+}
 
   return (
     <main className="min-h-screen bg-black pb-20 text-white lg:pb-0">
@@ -684,7 +675,14 @@ export default function Home() {
               </select>
             </div>
 
-            {filteredPosts.length === 0 ? (
+            {isLoadingPosts ? (
+              <div className="rounded-3xl border border-dashed border-zinc-700 bg-black p-8 text-center">
+                <h2 className="text-2xl font-black">Loading takes...</h2>
+                <p className="mt-3 text-zinc-500">
+                  Getting posts from Supabase.
+                </p>
+              </div>
+            ) : filteredPosts.length === 0 ? (
               <div className="rounded-3xl border border-dashed border-zinc-700 bg-black p-8 text-center">
                 <h2 className="text-2xl font-black">No takes here yet.</h2>
                 <p className="mt-3 text-zinc-500">
@@ -742,12 +740,8 @@ export default function Home() {
                     <div className="mt-5 flex flex-wrap gap-4 text-sm text-zinc-400">
                       <span>🔥 {post.heat} heat</span>
                       <span>💬 {post.replyCount} replies</span>
-                      <span>
-                        ⚡ Activity {getActivityScore(post)}
-                      </span>
-                      <span>
-                        ⚖️ Split {100 - getControversyScore(post)}%
-                      </span>
+                      <span>⚡ Activity {getActivityScore(post)}</span>
+                      <span>⚖️ Split {100 - getControversyScore(post)}%</span>
                     </div>
 
                     <section className="mt-5 rounded-2xl border border-zinc-800 bg-black p-4">
@@ -944,7 +938,7 @@ export default function Home() {
             </p>
 
             <div className="mt-4 space-y-3 text-sm">
-              {pulseTopics.map((item) => (
+              {pulseDisplayItems.map((item) => (
                 <button
                   key={item.topic}
                   onClick={() => setSelectedTopic(item.topic)}
@@ -952,7 +946,9 @@ export default function Home() {
                 >
                   <span>🔥 {item.topic}</span>
                   <span className="mt-1 block text-xs text-zinc-500">
-                    Pulse score: {item.score}
+                    {item.score > 0
+                      ? `Pulse score: ${item.score}`
+                      : "Suggested topic"}
                   </span>
                 </button>
               ))}
