@@ -41,6 +41,8 @@ type Post = {
   replyCount: number;
   agree: number;
   disagree: number;
+  mixed: number;
+  convinceMe: number;
   replies: Reply[];
 };
 
@@ -166,12 +168,42 @@ const defaultPopularTopics: Record<Room, string[]> = {
   ],
 };
 
+function getTotalVotes(post: Post) {
+  return post.agree + post.disagree + post.mixed + post.convinceMe;
+}
+
+function getVotePercentage(count: number, total: number) {
+  if (total === 0) {
+    return 0;
+  }
+
+  return Math.round((count / total) * 100);
+}
+
+function getVoteOptions(post: Post) {
+  return [
+    { stance: "Agree" as Stance, count: post.agree },
+    { stance: "Disagree" as Stance, count: post.disagree },
+    { stance: "Mixed" as Stance, count: post.mixed },
+    { stance: "Convince Me" as Stance, count: post.convinceMe },
+  ];
+}
+
 function getControversyScore(post: Post) {
-  return Math.abs(post.agree - post.disagree);
+  const totalVotes = getTotalVotes(post);
+
+  if (totalVotes === 0) {
+    return 0;
+  }
+
+  const agreePercent = getVotePercentage(post.agree, totalVotes);
+  const disagreePercent = getVotePercentage(post.disagree, totalVotes);
+
+  return Math.abs(agreePercent - disagreePercent);
 }
 
 function getActivityScore(post: Post) {
-  return post.heat + post.replyCount * 2;
+  return post.heat + post.replyCount * 2 + getTotalVotes(post);
 }
 
 function mapDbPost(row: DbPost): Post {
@@ -190,6 +222,8 @@ function mapDbPost(row: DbPost): Post {
     replyCount: 0,
     agree: row.agree_count,
     disagree: row.disagree_count,
+    mixed: row.mixed_count,
+    convinceMe: row.convince_me_count,
     replies: [],
   };
 }
@@ -451,9 +485,10 @@ export default function Home() {
       return;
     }
 
-    const agree = Math.floor(Math.random() * 45) + 35;
-    const disagree = 100 - agree;
-    const heat = Math.floor(Math.random() * 30) + 70;
+    const initialAgree = newStance === "Agree" ? 1 : 0;
+    const initialDisagree = newStance === "Disagree" ? 1 : 0;
+    const initialMixed = newStance === "Mixed" ? 1 : 0;
+    const initialConvinceMe = newStance === "Convince Me" ? 1 : 0;
 
     const { data, error } = await supabase
       .from("posts")
@@ -466,11 +501,11 @@ export default function Home() {
         body,
         author_name: "You",
         stance: newStance,
-        heat,
-        agree_count: agree,
-        disagree_count: disagree,
-        mixed_count: 0,
-        convince_me_count: 0,
+        heat: 1,
+        agree_count: initialAgree,
+        disagree_count: initialDisagree,
+        mixed_count: initialMixed,
+        convince_me_count: initialConvinceMe,
       })
       .select()
       .single();
@@ -541,6 +576,59 @@ export default function Home() {
     });
   }
 
+  async function handleVote(postId: string, stance: Stance) {
+    const currentPost = posts.find((post) => post.id === postId);
+
+    if (!currentPost) {
+      return;
+    }
+
+    const updatedPost = {
+      ...currentPost,
+      agree: currentPost.agree + (stance === "Agree" ? 1 : 0),
+      disagree: currentPost.disagree + (stance === "Disagree" ? 1 : 0),
+      mixed: currentPost.mixed + (stance === "Mixed" ? 1 : 0),
+      convinceMe:
+        currentPost.convinceMe + (stance === "Convince Me" ? 1 : 0),
+      heat: currentPost.heat + 1,
+    };
+
+    const { data, error } = await supabase
+      .from("posts")
+      .update({
+        agree_count: updatedPost.agree,
+        disagree_count: updatedPost.disagree,
+        mixed_count: updatedPost.mixed,
+        convince_me_count: updatedPost.convinceMe,
+        heat: updatedPost.heat,
+      })
+      .eq("id", postId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error voting:", error);
+      alert("Could not save vote. Check the console for details.");
+      return;
+    }
+
+    const savedPost = mapDbPost(data as DbPost);
+
+    setPosts((currentPosts) =>
+      currentPosts.map((post) => {
+        if (post.id !== postId) {
+          return post;
+        }
+
+        return {
+          ...savedPost,
+          replies: post.replies,
+          replyCount: post.replyCount,
+        };
+      })
+    );
+  }
+
   return (
     <main className="min-h-screen bg-black pb-24 text-white lg:pb-0">
       <header className="sticky top-0 z-20 border-b border-zinc-800 bg-black/90 backdrop-blur">
@@ -568,14 +656,14 @@ export default function Home() {
               onClick={() => scrollToSection("pulse-section")}
               className="hover:text-white"
             >
-              Topics
+              Pulse
             </button>
 
             <button
               onClick={() => chooseAction("Debate")}
               className="hover:text-white"
             >
-              Debate
+              Debates
             </button>
 
             <button
@@ -649,7 +737,7 @@ export default function Home() {
               </h2>
               <p className="text-sm leading-6 text-zinc-400">
                 Rooms stay organized, but topics are open. Popular topics rise
-                through activity, replies, and debate.
+                through activity, replies, votes, and debate.
               </p>
             </div>
           </div>
@@ -658,7 +746,7 @@ export default function Home() {
         <section className="space-y-6">
           <section className="rounded-3xl border border-zinc-800 bg-gradient-to-br from-zinc-950 to-zinc-900 p-6 md:p-8">
             <p className="mb-3 text-xs font-black uppercase tracking-widest text-orange-400">
-              Post a take • Pick a side • Change minds
+              Post a take • Pick a side • Watch the room split
             </p>
 
             <h1 className="max-w-3xl text-4xl font-black tracking-tight md:text-6xl">
@@ -847,29 +935,53 @@ export default function Home() {
                     <p className="mt-3 leading-7 text-zinc-400">{post.body}</p>
 
                     <div className="mt-5 rounded-2xl bg-black p-4">
-                      <div className="mb-2 flex items-center justify-between text-sm">
+                      <div className="mb-4 flex items-center justify-between text-sm">
                         <span className="font-black text-white">
                           This Take Split the Room
                         </span>
-                        <span className="text-zinc-500">{post.stance}</span>
+                        <span className="text-zinc-500">
+                          {getTotalVotes(post)} votes
+                        </span>
                       </div>
 
-                      <div className="h-3 overflow-hidden rounded-full bg-zinc-800">
-                        <div
-                          className="h-full rounded-full bg-orange-500"
-                          style={{ width: `${post.agree}%` }}
-                        />
-                      </div>
+                      <div className="grid gap-3">
+                        {getVoteOptions(post).map((option) => {
+                          const totalVotes = getTotalVotes(post);
+                          const percentage = getVotePercentage(
+                            option.count,
+                            totalVotes
+                          );
 
-                      <div className="mt-2 flex justify-between text-xs text-zinc-500">
-                        <span>{post.agree}% Agree</span>
-                        <span>{post.disagree}% Disagree</span>
+                          return (
+                            <div key={option.stance}>
+                              <button
+                                onClick={() =>
+                                  handleVote(post.id, option.stance)
+                                }
+                                className="mb-2 flex w-full items-center justify-between rounded-2xl bg-zinc-950 px-4 py-3 text-left text-sm font-black hover:bg-zinc-900"
+                              >
+                                <span>{option.stance}</span>
+                                <span className="text-zinc-500">
+                                  {percentage}% · {option.count}
+                                </span>
+                              </button>
+
+                              <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
+                                <div
+                                  className="h-full rounded-full bg-orange-500"
+                                  style={{ width: `${percentage}%` }}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
 
                     <div className="mt-5 flex flex-wrap gap-4 text-sm text-zinc-400">
                       <span>🔥 {post.heat} heat</span>
                       <span>💬 {post.replyCount} replies</span>
+                      <span>🗳️ {getTotalVotes(post)} votes</span>
                       <span>⚡ Activity {getActivityScore(post)}</span>
                       <span>⚖️ Split {100 - getControversyScore(post)}%</span>
                     </div>
@@ -1082,7 +1194,7 @@ export default function Home() {
             </h2>
 
             <p className="mt-2 text-sm text-zinc-500">
-              Generated from post activity, replies, and heat.
+              Generated from post activity, replies, votes, and heat.
             </p>
 
             <div className="mt-4 space-y-3 text-sm">
