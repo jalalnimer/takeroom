@@ -28,6 +28,7 @@ type Reply = {
 
 type Post = {
   id: string;
+  createdAt: string;
   type: PostType;
   room: Room;
   topic: string;
@@ -176,6 +177,7 @@ function getActivityScore(post: Post) {
 function mapDbPost(row: DbPost): Post {
   return {
     id: row.id,
+    createdAt: row.created_at,
     type: row.type,
     room: row.room,
     topic: row.topic,
@@ -211,6 +213,7 @@ export default function Home() {
   );
   const [selectedTopic, setSelectedTopic] = useState("All Topics");
   const [selectedAngle, setSelectedAngle] = useState("All Angles");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
@@ -226,59 +229,59 @@ export default function Home() {
   const [replyText, setReplyText] = useState<Record<string, string>>({});
   const [replyStance, setReplyStance] = useState<Record<string, Stance>>({});
 
-useEffect(() => {
-  async function loadPostsAndReplies() {
-    const { data: postData, error: postError } = await supabase
-      .from("posts")
-      .select("*")
-      .order("created_at", { ascending: false });
+  useEffect(() => {
+    async function loadPostsAndReplies() {
+      const { data: postData, error: postError } = await supabase
+        .from("posts")
+        .select("*")
+        .order("created_at", { ascending: false });
 
-    if (postError) {
-      console.error("Error loading posts:", postError);
+      if (postError) {
+        console.error("Error loading posts:", postError);
+        setIsLoadingPosts(false);
+        return;
+      }
+
+      const { data: replyData, error: replyError } = await supabase
+        .from("replies")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (replyError) {
+        console.error("Error loading replies:", replyError);
+        setIsLoadingPosts(false);
+        return;
+      }
+
+      const repliesByPost = new Map<string, Reply[]>();
+
+      (replyData || []).forEach((reply) => {
+        const dbReply = reply as DbReply;
+        const currentReplies = repliesByPost.get(dbReply.post_id) || [];
+
+        repliesByPost.set(dbReply.post_id, [
+          ...currentReplies,
+          mapDbReply(dbReply),
+        ]);
+      });
+
+      const mappedPosts = (postData || []).map((post) => {
+        const mappedPost = mapDbPost(post as DbPost);
+        const replies = repliesByPost.get(mappedPost.id) || [];
+
+        return {
+          ...mappedPost,
+          replies,
+          replyCount: replies.length,
+        };
+      });
+
+      setPosts(mappedPosts);
       setIsLoadingPosts(false);
-      return;
     }
 
-    const { data: replyData, error: replyError } = await supabase
-      .from("replies")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (replyError) {
-      console.error("Error loading replies:", replyError);
-      setIsLoadingPosts(false);
-      return;
-    }
-
-    const repliesByPost = new Map<string, Reply[]>();
-
-    (replyData || []).forEach((reply) => {
-      const dbReply = reply as DbReply;
-      const currentReplies = repliesByPost.get(dbReply.post_id) || [];
-
-      repliesByPost.set(dbReply.post_id, [
-        ...currentReplies,
-        mapDbReply(dbReply),
-      ]);
-    });
-
-    const mappedPosts = (postData || []).map((post) => {
-      const mappedPost = mapDbPost(post as DbPost);
-      const replies = repliesByPost.get(mappedPost.id) || [];
-
-      return {
-        ...mappedPost,
-        replies,
-        replyCount: replies.length,
-      };
-    });
-
-    setPosts(mappedPosts);
-    setIsLoadingPosts(false);
-  }
-
-  loadPostsAndReplies();
-}, []);
+    loadPostsAndReplies();
+  }, []);
 
   const pulseTopics = useMemo(() => {
     const topicScores = new Map<string, number>();
@@ -335,6 +338,8 @@ useEffect(() => {
   }, [posts, newRoom]);
 
   const filteredPosts = useMemo(() => {
+    const searchText = searchQuery.trim().toLowerCase();
+
     const matchingPosts = posts.filter((post) => {
       const typeMatch =
         selectedType === "All Types" ? true : post.type === selectedType;
@@ -345,7 +350,23 @@ useEffect(() => {
       const angleMatch =
         selectedAngle === "All Angles" ? true : post.angle === selectedAngle;
 
-      return typeMatch && roomMatch && topicMatch && angleMatch;
+      const searchableText = [
+        post.type,
+        post.room,
+        post.topic,
+        post.angle,
+        post.title,
+        post.body,
+        post.author,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      const searchMatch = searchText
+        ? searchableText.includes(searchText)
+        : true;
+
+      return typeMatch && roomMatch && topicMatch && angleMatch && searchMatch;
     });
 
     const sortedPosts = [...matchingPosts];
@@ -355,24 +376,67 @@ useEffect(() => {
     }
 
     if (feedMode === "New") {
-      sortedPosts.sort((a, b) => Number(b.id) - Number(a.id));
+      sortedPosts.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
     }
 
     if (feedMode === "Controversial") {
-      sortedPosts.sort((a, b) => getControversyScore(a) - getControversyScore(b));
+      sortedPosts.sort(
+        (a, b) => getControversyScore(a) - getControversyScore(b)
+      );
     }
 
     return sortedPosts;
-  }, [posts, selectedType, selectedRoom, selectedTopic, selectedAngle, feedMode]);
+  }, [
+    posts,
+    selectedType,
+    selectedRoom,
+    selectedTopic,
+    selectedAngle,
+    feedMode,
+    searchQuery,
+  ]);
+
+  function scrollToSection(id: string) {
+    const element = document.getElementById(id);
+
+    if (element) {
+      element.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }
+  }
+
+  function goHome() {
+    setSelectedType("All Types");
+    setSelectedRoom("All Rooms");
+    setSelectedTopic("All Topics");
+    setSelectedAngle("All Angles");
+    setSearchQuery("");
+    scrollToSection("feed-section");
+  }
 
   function chooseAction(type: PostType) {
     setSelectedType(type);
     setNewType(type);
+    scrollToSection("feed-section");
+  }
+
+  function openCreate() {
+    scrollToSection("create-section");
+  }
+
+  function openProfile() {
+    scrollToSection("profile-section");
   }
 
   function handleSelectRoom(room: Room | "All Rooms") {
     setSelectedRoom(room);
     setSelectedTopic("All Topics");
+    scrollToSection("feed-section");
   }
 
   function handleNewRoomChange(room: Room) {
@@ -420,82 +484,121 @@ useEffect(() => {
     setPosts([mapDbPost(data as DbPost), ...posts]);
     setTitle("");
     setBody("");
+    scrollToSection("feed-section");
   }
 
- 
   async function handleCreateReply(
-  event: React.FormEvent<HTMLFormElement>,
-  postId: string
-) {
-  event.preventDefault();
+    event: React.FormEvent<HTMLFormElement>,
+    postId: string
+  ) {
+    event.preventDefault();
 
-  const text = replyText[postId];
+    const text = replyText[postId];
 
-  if (!text || !text.trim()) {
-    return;
+    if (!text || !text.trim()) {
+      return;
+    }
+
+    const stance = replyStance[postId] || "Agree";
+
+    const { data, error } = await supabase
+      .from("replies")
+      .insert({
+        post_id: postId,
+        author_name: "You",
+        stance,
+        body: text.trim(),
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Error creating reply:", error);
+      alert("Could not save reply. Check the console for details.");
+      return;
+    }
+
+    const newReply = mapDbReply(data as DbReply);
+
+    setPosts((currentPosts) =>
+      currentPosts.map((post) => {
+        if (post.id !== postId) {
+          return post;
+        }
+
+        return {
+          ...post,
+          replyCount: post.replyCount + 1,
+          heat: post.heat + 2,
+          replies: [newReply, ...post.replies],
+        };
+      })
+    );
+
+    setReplyText({
+      ...replyText,
+      [postId]: "",
+    });
   }
-
-  const stance = replyStance[postId] || "Agree";
-
-  const { data, error } = await supabase
-    .from("replies")
-    .insert({
-      post_id: postId,
-      author_name: "You",
-      stance,
-      body: text.trim(),
-    })
-    .select()
-    .single();
-
-  if (error) {
-    console.error("Error creating reply:", error);
-    alert("Could not save reply. Check the console for details.");
-    return;
-  }
-
-  const newReply = mapDbReply(data as DbReply);
-
-  setPosts((currentPosts) =>
-    currentPosts.map((post) => {
-      if (post.id !== postId) {
-        return post;
-      }
-
-      return {
-        ...post,
-        replyCount: post.replyCount + 1,
-        heat: post.heat + 2,
-        replies: [newReply, ...post.replies],
-      };
-    })
-  );
-
-  setReplyText({
-    ...replyText,
-    [postId]: "",
-  });
-}
 
   return (
-    <main className="min-h-screen bg-black pb-20 text-white lg:pb-0">
+    <main className="min-h-screen bg-black pb-24 text-white lg:pb-0">
       <header className="sticky top-0 z-20 border-b border-zinc-800 bg-black/90 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center gap-4 px-5 py-4">
-          <div>
+          <button onClick={goHome} className="text-left">
             <p className="text-xl font-black tracking-tight">TakeRoom</p>
             <p className="text-xs text-zinc-500">
               Find out where the room stands.
             </p>
-          </div>
+          </button>
+
+          <nav className="hidden items-center gap-5 text-xs font-black uppercase tracking-widest text-zinc-400 lg:flex">
+            <button onClick={goHome} className="hover:text-white">
+              Home
+            </button>
+
+            <button
+              onClick={() => scrollToSection("rooms-section")}
+              className="hover:text-white"
+            >
+              Rooms
+            </button>
+
+            <button
+              onClick={() => scrollToSection("pulse-section")}
+              className="hover:text-white"
+            >
+              Topics
+            </button>
+
+            <button
+              onClick={() => chooseAction("Debate")}
+              className="hover:text-white"
+            >
+              Debate
+            </button>
+
+            <button
+              onClick={() => chooseAction("Review")}
+              className="hover:text-white"
+            >
+              Reviews
+            </button>
+          </nav>
 
           <div className="hidden flex-1 md:block">
             <input
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="Search rooms, topics, takes, reviews, debates..."
               className="w-full rounded-full border border-zinc-800 bg-zinc-950 px-5 py-3 text-sm outline-none placeholder:text-zinc-600 focus:border-orange-500"
             />
           </div>
 
-          <button className="rounded-full bg-orange-500 px-5 py-3 text-sm font-black text-white hover:bg-orange-600">
+          <button
+            onClick={openCreate}
+            className="rounded-full bg-orange-500 px-5 py-3 text-sm font-black text-white hover:bg-orange-600"
+          >
             Create
           </button>
         </div>
@@ -504,7 +607,10 @@ useEffect(() => {
       <section className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:grid-cols-[230px_1fr_320px]">
         <aside className="hidden lg:block">
           <div className="sticky top-24 space-y-6">
-            <div className="rounded-3xl border border-zinc-800 bg-zinc-950 p-4">
+            <div
+              id="rooms-section"
+              className="rounded-3xl border border-zinc-800 bg-zinc-950 p-4"
+            >
               <h2 className="mb-4 text-sm font-black uppercase tracking-widest text-zinc-500">
                 Rooms
               </h2>
@@ -570,7 +676,11 @@ useEffect(() => {
               <button
                 key={type}
                 onClick={() => chooseAction(type)}
-                className="rounded-3xl border border-zinc-800 bg-zinc-950 p-4 text-left transition hover:border-orange-500 hover:bg-zinc-900"
+                className={`rounded-3xl border p-4 text-left transition ${
+                  selectedType === type
+                    ? "border-orange-500 bg-zinc-900"
+                    : "border-zinc-800 bg-zinc-950 hover:border-orange-500 hover:bg-zinc-900"
+                }`}
               >
                 <p className="text-lg font-black">
                   {type === "Debate" && "🔥 "}
@@ -581,7 +691,8 @@ useEffect(() => {
                   {type}
                 </p>
                 <p className="mt-2 text-xs leading-5 text-zinc-500">
-                  {type === "Debate" && "Challenge a take and let people argue."}
+                  {type === "Debate" &&
+                    "Challenge a take and let people argue."}
                   {type === "Opinion" && "Share a short personal view."}
                   {type === "Review" && "Rate and explain something."}
                   {type === "Poll" && "Let the room vote."}
@@ -591,7 +702,19 @@ useEffect(() => {
             ))}
           </section>
 
-          <section className="rounded-3xl border border-zinc-800 bg-zinc-950 p-4">
+          <section
+            id="feed-section"
+            className="rounded-3xl border border-zinc-800 bg-zinc-950 p-4"
+          >
+            <div className="mb-4 md:hidden">
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search TakeRoom..."
+                className="w-full rounded-full border border-zinc-800 bg-black px-5 py-3 text-sm outline-none placeholder:text-zinc-600 focus:border-orange-500"
+              />
+            </div>
+
             <div className="mb-4 flex flex-wrap gap-2">
               {feedModes.map((mode) => (
                 <button
@@ -688,6 +811,13 @@ useEffect(() => {
                 <p className="mt-3 text-zinc-500">
                   Start the first discussion in this room or topic.
                 </p>
+
+                <button
+                  onClick={openCreate}
+                  className="mt-5 rounded-full bg-orange-500 px-5 py-3 text-sm font-black text-white hover:bg-orange-600"
+                >
+                  Create the first take
+                </button>
               </div>
             ) : (
               <div className="grid gap-4">
@@ -833,7 +963,10 @@ useEffect(() => {
         </section>
 
         <aside className="space-y-6">
-          <section className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5">
+          <section
+            id="create-section"
+            className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5"
+          >
             <h2 className="text-2xl font-black">Create a take</h2>
             <p className="mt-2 text-sm text-zinc-500">
               Choose a room, then type any topic or pick one that is already
@@ -926,7 +1059,22 @@ useEffect(() => {
             </form>
           </section>
 
-          <section className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5">
+          <section
+            id="profile-section"
+            className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5"
+          >
+            <h2 className="text-xl font-black">Profile coming soon</h2>
+
+            <p className="mt-3 text-sm leading-6 text-zinc-500">
+              Soon you will be able to create an account, save your takes, track
+              your replies, and see your stance history.
+            </p>
+          </section>
+
+          <section
+            id="pulse-section"
+            className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5"
+          >
             <h2 className="text-xl font-black">
               {selectedRoom === "All Rooms"
                 ? "TakeRoom Pulse"
@@ -941,7 +1089,10 @@ useEffect(() => {
               {pulseDisplayItems.map((item) => (
                 <button
                   key={item.topic}
-                  onClick={() => setSelectedTopic(item.topic)}
+                  onClick={() => {
+                    setSelectedTopic(item.topic);
+                    scrollToSection("feed-section");
+                  }}
                   className="w-full rounded-2xl bg-zinc-900 p-3 text-left font-bold text-zinc-300 hover:bg-zinc-800"
                 >
                   <span>🔥 {item.topic}</span>
@@ -962,7 +1113,10 @@ useEffect(() => {
               {debateAngles.slice(0, 7).map((angle) => (
                 <button
                   key={angle}
-                  onClick={() => setSelectedAngle(angle)}
+                  onClick={() => {
+                    setSelectedAngle(angle);
+                    scrollToSection("feed-section");
+                  }}
                   className="rounded-full bg-zinc-900 px-3 py-2 text-zinc-300 hover:bg-zinc-800"
                 >
                   {angle}
@@ -985,13 +1139,34 @@ useEffect(() => {
 
       <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-zinc-800 bg-black p-3 lg:hidden">
         <div className="mx-auto flex max-w-md justify-between text-xs font-black text-zinc-400">
-          <button>Home</button>
-          <button>Debate</button>
-          <button className="rounded-full bg-orange-500 px-4 py-2 text-white">
+          <button onClick={goHome} className="hover:text-white">
+            Home
+          </button>
+
+          <button
+            onClick={() => chooseAction("Debate")}
+            className="hover:text-white"
+          >
+            Debate
+          </button>
+
+          <button
+            onClick={openCreate}
+            className="rounded-full bg-orange-500 px-4 py-2 text-white"
+          >
             Share
           </button>
-          <button>Review</button>
-          <button>Profile</button>
+
+          <button
+            onClick={() => chooseAction("Review")}
+            className="hover:text-white"
+          >
+            Review
+          </button>
+
+          <button onClick={openProfile} className="hover:text-white">
+            Profile
+          </button>
         </div>
       </nav>
     </main>
