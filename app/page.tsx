@@ -35,6 +35,7 @@ type Post = {
   angle: string;
   title: string;
   body: string;
+  sourceUrl: string;
   author: string;
   stance: Stance;
   heat: number;
@@ -55,6 +56,7 @@ type DbPost = {
   angle: string;
   title: string;
   body: string;
+  source_url: string | null;
   author_name: string;
   stance: Stance;
   heat: number;
@@ -168,6 +170,59 @@ const defaultPopularTopics: Record<Room, string[]> = {
   ],
 };
 
+const createFormCopy: Record<
+  PostType,
+  {
+    heading: string;
+    description: string;
+    titlePlaceholder: string;
+    bodyPlaceholder: string;
+    sourcePlaceholder: string;
+  }
+> = {
+  Debate: {
+    heading: "Start a debate",
+    description:
+      "Make a strong take, pick your side, and let the room argue it out.",
+    titlePlaceholder: "Example: Haaland disappears in big games",
+    bodyPlaceholder:
+      "Explain your argument. Why should people agree or disagree?",
+    sourcePlaceholder: "Optional source: YouTube clip, article, stats page...",
+  },
+  Opinion: {
+    heading: "Share an opinion",
+    description: "Post a personal take and see how the room reacts.",
+    titlePlaceholder: "Example: TikTok ruined attention spans",
+    bodyPlaceholder: "Explain your opinion clearly.",
+    sourcePlaceholder: "Optional source or context link...",
+  },
+  Review: {
+    heading: "Write a review",
+    description:
+      "Review a film, show, album, game, product, or experience.",
+    titlePlaceholder: "Example: Interstellar is still Nolan’s best film",
+    bodyPlaceholder: "What did you like or dislike? Would you recommend it?",
+    sourcePlaceholder:
+      "Optional trailer, IMDb, song, article, or reference...",
+  },
+  Poll: {
+    heading: "Create a poll-style take",
+    description:
+      "Ask the room to choose a side. Full poll options will come later.",
+    titlePlaceholder: "Example: Who wins this debate?",
+    bodyPlaceholder: "Explain the choices or context for the poll.",
+    sourcePlaceholder: "Optional source or context link...",
+  },
+  Question: {
+    heading: "Ask the room",
+    description:
+      "Ask a question and let people answer from different sides.",
+    titlePlaceholder: "Example: Am I the only one who thinks this?",
+    bodyPlaceholder: "Give context so people understand the question.",
+    sourcePlaceholder: "Optional article, clip, or context link...",
+  },
+};
+
 function getTotalVotes(post: Post) {
   return post.agree + post.disagree + post.mixed + post.convinceMe;
 }
@@ -216,6 +271,7 @@ function mapDbPost(row: DbPost): Post {
     angle: row.angle,
     title: row.title,
     body: row.body,
+    sourceUrl: row.source_url || "",
     author: row.author_name,
     stance: row.stance,
     heat: row.heat,
@@ -259,6 +315,7 @@ export default function Home() {
   const [newStance, setNewStance] = useState<Stance>("Convince Me");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
 
   const [replyText, setReplyText] = useState<Record<string, string>>({});
   const [replyStance, setReplyStance] = useState<Record<string, Stance>>({});
@@ -391,6 +448,7 @@ export default function Home() {
         post.angle,
         post.title,
         post.body,
+        post.sourceUrl,
         post.author,
       ]
         .join(" ")
@@ -499,6 +557,7 @@ export default function Home() {
         angle: newAngle,
         title,
         body,
+        source_url: sourceUrl.trim() || null,
         author_name: "You",
         stance: newStance,
         heat: 1,
@@ -519,6 +578,7 @@ export default function Home() {
     setPosts([mapDbPost(data as DbPost), ...posts]);
     setTitle("");
     setBody("");
+    setSourceUrl("");
     scrollToSection("feed-section");
   }
 
@@ -737,7 +797,7 @@ export default function Home() {
               </h2>
               <p className="text-sm leading-6 text-zinc-400">
                 Rooms stay organized, but topics are open. Popular topics rise
-                through activity, replies, votes, and debate.
+                through activity, replies, votes, sources, and debate.
               </p>
             </div>
           </div>
@@ -754,8 +814,9 @@ export default function Home() {
             </h1>
 
             <p className="mt-5 max-w-2xl text-zinc-400">
-              Talk about anything, but keep it discoverable through rooms,
-              popular topics, debate angles, and stance-based replies.
+              Talk about anything, add sources when needed, and keep it
+              discoverable through rooms, topics, debate angles, and
+              stance-based replies.
             </p>
           </section>
 
@@ -934,6 +995,17 @@ export default function Home() {
 
                     <p className="mt-3 leading-7 text-zinc-400">{post.body}</p>
 
+                    {post.sourceUrl && (
+                      <a
+                        href={post.sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-4 block rounded-2xl border border-zinc-800 bg-black px-4 py-3 text-sm font-bold text-orange-400 hover:border-orange-500"
+                      >
+                        🔗 Open source / reference
+                      </a>
+                    )}
+
                     <div className="mt-5 rounded-2xl bg-black p-4">
                       <div className="mb-4 flex items-center justify-between text-sm">
                         <span className="font-black text-white">
@@ -1079,10 +1151,11 @@ export default function Home() {
             id="create-section"
             className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5"
           >
-            <h2 className="text-2xl font-black">Create a take</h2>
+            <h2 className="text-2xl font-black">
+              {createFormCopy[newType].heading}
+            </h2>
             <p className="mt-2 text-sm text-zinc-500">
-              Choose a room, then type any topic or pick one that is already
-              popular.
+              {createFormCopy[newType].description}
             </p>
 
             <form onSubmit={handleCreatePost} className="mt-5 space-y-4">
@@ -1153,16 +1226,23 @@ export default function Home() {
               <input
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
-                placeholder="Title of your take"
+                placeholder={createFormCopy[newType].titlePlaceholder}
                 className="w-full rounded-2xl border border-zinc-800 bg-black px-4 py-3 text-sm outline-none placeholder:text-zinc-600 focus:border-orange-500"
               />
 
               <textarea
                 value={body}
                 onChange={(event) => setBody(event.target.value)}
-                placeholder="Explain your opinion..."
+                placeholder={createFormCopy[newType].bodyPlaceholder}
                 rows={5}
                 className="w-full resize-none rounded-2xl border border-zinc-800 bg-black px-4 py-3 text-sm outline-none placeholder:text-zinc-600 focus:border-orange-500"
+              />
+
+              <input
+                value={sourceUrl}
+                onChange={(event) => setSourceUrl(event.target.value)}
+                placeholder={createFormCopy[newType].sourcePlaceholder}
+                className="w-full rounded-2xl border border-zinc-800 bg-black px-4 py-3 text-sm outline-none placeholder:text-zinc-600 focus:border-orange-500"
               />
 
               <button className="w-full rounded-2xl bg-orange-500 px-4 py-3 font-black text-white hover:bg-orange-600">
@@ -1194,7 +1274,7 @@ export default function Home() {
             </h2>
 
             <p className="mt-2 text-sm text-zinc-500">
-              Generated from post activity, replies, votes, and heat.
+              Generated from post activity, replies, votes, sources, and heat.
             </p>
 
             <div className="mt-4 space-y-3 text-sm">
