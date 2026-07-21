@@ -223,6 +223,8 @@ const createFormCopy: Record<
   },
 };
 
+const voteStorageKey = "takeroom_user_votes_v1";
+
 function getTotalVotes(post: Post) {
   return post.agree + post.disagree + post.mixed + post.convinceMe;
 }
@@ -319,6 +321,11 @@ export default function Home() {
 
   const [replyText, setReplyText] = useState<Record<string, string>>({});
   const [replyStance, setReplyStance] = useState<Record<string, Stance>>({});
+  const [activeReplySide, setActiveReplySide] = useState<Record<string, Stance>>(
+    {}
+  );
+  const [userVotes, setUserVotes] = useState<Record<string, Stance>>({});
+  const [isVotingPost, setIsVotingPost] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     async function loadPostsAndReplies() {
@@ -372,6 +379,20 @@ export default function Home() {
     }
 
     loadPostsAndReplies();
+  }, []);
+
+  useEffect(() => {
+    const savedVotes = window.localStorage.getItem(voteStorageKey);
+
+    if (!savedVotes) {
+      return;
+    }
+
+    try {
+      setUserVotes(JSON.parse(savedVotes) as Record<string, Stance>);
+    } catch {
+      window.localStorage.removeItem(voteStorageKey);
+    }
   }, []);
 
   const pulseTopics = useMemo(() => {
@@ -536,6 +557,11 @@ export default function Home() {
     setNewTopic(defaultPopularTopics[room][0]);
   }
 
+  function saveUserVotes(updatedVotes: Record<string, Stance>) {
+    setUserVotes(updatedVotes);
+    window.localStorage.setItem(voteStorageKey, JSON.stringify(updatedVotes));
+  }
+
   async function handleCreatePost(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -594,7 +620,7 @@ export default function Home() {
       return;
     }
 
-    const stance = replyStance[postId] || "Agree";
+    const stance = replyStance[postId] || userVotes[postId] || "Agree";
 
     const { data, error } = await supabase
       .from("replies")
@@ -634,23 +660,58 @@ export default function Home() {
       ...replyText,
       [postId]: "",
     });
+
+    setActiveReplySide({
+      ...activeReplySide,
+      [postId]: stance,
+    });
   }
 
   async function handleVote(postId: string, stance: Stance) {
     const currentPost = posts.find((post) => post.id === postId);
 
-    if (!currentPost) {
+    if (!currentPost || isVotingPost[postId]) {
       return;
     }
 
+    const previousStance = userVotes[postId];
+
+    if (previousStance === stance) {
+      return;
+    }
+
+    setIsVotingPost((current) => ({
+      ...current,
+      [postId]: true,
+    }));
+
     const updatedPost = {
       ...currentPost,
-      agree: currentPost.agree + (stance === "Agree" ? 1 : 0),
-      disagree: currentPost.disagree + (stance === "Disagree" ? 1 : 0),
-      mixed: currentPost.mixed + (stance === "Mixed" ? 1 : 0),
-      convinceMe:
-        currentPost.convinceMe + (stance === "Convince Me" ? 1 : 0),
-      heat: currentPost.heat + 1,
+      agree: Math.max(
+        0,
+        currentPost.agree +
+          (stance === "Agree" ? 1 : 0) -
+          (previousStance === "Agree" ? 1 : 0)
+      ),
+      disagree: Math.max(
+        0,
+        currentPost.disagree +
+          (stance === "Disagree" ? 1 : 0) -
+          (previousStance === "Disagree" ? 1 : 0)
+      ),
+      mixed: Math.max(
+        0,
+        currentPost.mixed +
+          (stance === "Mixed" ? 1 : 0) -
+          (previousStance === "Mixed" ? 1 : 0)
+      ),
+      convinceMe: Math.max(
+        0,
+        currentPost.convinceMe +
+          (stance === "Convince Me" ? 1 : 0) -
+          (previousStance === "Convince Me" ? 1 : 0)
+      ),
+      heat: previousStance ? currentPost.heat : currentPost.heat + 1,
     };
 
     const { data, error } = await supabase
@@ -665,6 +726,11 @@ export default function Home() {
       .eq("id", postId)
       .select()
       .single();
+
+    setIsVotingPost((current) => ({
+      ...current,
+      [postId]: false,
+    }));
 
     if (error) {
       console.error("Error voting:", error);
@@ -687,6 +753,21 @@ export default function Home() {
         };
       })
     );
+
+    saveUserVotes({
+      ...userVotes,
+      [postId]: stance,
+    });
+
+    setReplyStance((current) => ({
+      ...current,
+      [postId]: stance,
+    }));
+
+    setActiveReplySide((current) => ({
+      ...current,
+      [postId]: stance,
+    }));
   }
 
   return (
@@ -1030,11 +1111,26 @@ export default function Home() {
                                 onClick={() =>
                                   handleVote(post.id, option.stance)
                                 }
-                                className="mb-2 flex w-full items-center justify-between rounded-2xl bg-zinc-950 px-4 py-3 text-left text-sm font-black hover:bg-zinc-900"
+                                disabled={
+                                  isVotingPost[post.id] ||
+                                  userVotes[post.id] === option.stance
+                                }
+                                className={`mb-2 flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm font-black ${
+                                  userVotes[post.id] === option.stance
+                                    ? "border border-orange-500 bg-orange-500/10 text-white"
+                                    : "bg-zinc-950 hover:bg-zinc-900"
+                                } ${
+                                  isVotingPost[post.id]
+                                    ? "cursor-wait opacity-60"
+                                    : ""
+                                }`}
                               >
                                 <span>{option.stance}</span>
                                 <span className="text-zinc-500">
                                   {percentage}% · {option.count}
+                                  {userVotes[post.id] === option.stance
+                                    ? " · Your vote"
+                                    : ""}
                                 </span>
                               </button>
 
@@ -1058,68 +1154,129 @@ export default function Home() {
                       <span>⚖️ Split {100 - getControversyScore(post)}%</span>
                     </div>
 
-                    <section className="mt-5 rounded-2xl border border-zinc-800 bg-black p-4">
-                      <h3 className="font-black">Side-based replies</h3>
+                    {(() => {
+                      const currentReplyStance =
+                        replyStance[post.id] || userVotes[post.id] || "Agree";
 
-                      <form
-                        onSubmit={(event) => handleCreateReply(event, post.id)}
-                        className="mt-4 space-y-3"
-                      >
-                        <select
-                          value={replyStance[post.id] || "Agree"}
-                          onChange={(event) =>
-                            setReplyStance({
-                              ...replyStance,
-                              [post.id]: event.target.value as Stance,
-                            })
-                          }
-                          className="w-full rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm outline-none focus:border-orange-500"
-                        >
-                          {stances.map((stance) => (
-                            <option key={stance}>{stance}</option>
-                          ))}
-                        </select>
+                      const currentActiveSide =
+                        activeReplySide[post.id] ||
+                        userVotes[post.id] ||
+                        "Agree";
 
-                        <textarea
-                          value={replyText[post.id] || ""}
-                          onChange={(event) =>
-                            setReplyText({
-                              ...replyText,
-                              [post.id]: event.target.value,
-                            })
-                          }
-                          placeholder="Write your reply..."
-                          rows={3}
-                          className="w-full resize-none rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm outline-none placeholder:text-zinc-600 focus:border-orange-500"
-                        />
+                      const activeSideReplies = post.replies.filter(
+                        (reply) => reply.stance === currentActiveSide
+                      );
 
-                        <button className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-black hover:bg-zinc-200">
-                          Post Reply
-                        </button>
-                      </form>
+                      return (
+                        <section className="mt-5 rounded-2xl border border-zinc-800 bg-black p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <h3 className="font-black">Join the debate</h3>
+                              <p className="mt-1 text-xs text-zinc-500">
+                                Vote first, then explain your side.
+                              </p>
+                            </div>
 
-                      <div className="mt-5 grid gap-3">
-                        {stances.map((stance) => {
-                          const matchingReplies = post.replies.filter(
-                            (reply) => reply.stance === stance
-                          );
+                            {userVotes[post.id] && (
+                              <span className="rounded-full border border-orange-500 bg-orange-500/10 px-3 py-1 text-xs font-black text-orange-400">
+                                You voted: {userVotes[post.id]}
+                              </span>
+                            )}
+                          </div>
 
-                          return (
-                            <div
-                              key={stance}
-                              className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4"
-                            >
-                              <p className="mb-3 text-sm font-black">
-                                {stance} Side
+                          <form
+                            onSubmit={(event) =>
+                              handleCreateReply(event, post.id)
+                            }
+                            className="mt-4 space-y-3"
+                          >
+                            <div>
+                              <p className="mb-2 text-xs font-black uppercase tracking-widest text-zinc-500">
+                                Reply as
                               </p>
 
-                              {matchingReplies.length === 0 ? (
+                              <div className="flex flex-wrap gap-2">
+                                {stances.map((stance) => (
+                                  <button
+                                    key={stance}
+                                    type="button"
+                                    onClick={() =>
+                                      setReplyStance({
+                                        ...replyStance,
+                                        [post.id]: stance,
+                                      })
+                                    }
+                                    className={`rounded-full px-3 py-2 text-xs font-black ${
+                                      currentReplyStance === stance
+                                        ? "bg-orange-500 text-white"
+                                        : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800"
+                                    }`}
+                                  >
+                                    {stance}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            <textarea
+                              value={replyText[post.id] || ""}
+                              onChange={(event) =>
+                                setReplyText({
+                                  ...replyText,
+                                  [post.id]: event.target.value,
+                                })
+                              }
+                              placeholder={`Write your ${currentReplyStance} argument...`}
+                              rows={3}
+                              className="w-full resize-none rounded-2xl border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm outline-none placeholder:text-zinc-600 focus:border-orange-500"
+                            />
+
+                            <button className="rounded-2xl bg-white px-4 py-2 text-sm font-black text-black hover:bg-zinc-200">
+                              Post {currentReplyStance} Reply
+                            </button>
+                          </form>
+
+                          <div className="mt-6">
+                            <div className="mb-3 flex flex-wrap gap-2">
+                              {stances.map((stance) => {
+                                const count = post.replies.filter(
+                                  (reply) => reply.stance === stance
+                                ).length;
+
+                                return (
+                                  <button
+                                    key={stance}
+                                    type="button"
+                                    onClick={() =>
+                                      setActiveReplySide({
+                                        ...activeReplySide,
+                                        [post.id]: stance,
+                                      })
+                                    }
+                                    className={`rounded-full px-3 py-2 text-xs font-black ${
+                                      currentActiveSide === stance
+                                        ? "bg-white text-black"
+                                        : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800"
+                                    }`}
+                                  >
+                                    {stance} · {count}
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            <div className="rounded-2xl border border-zinc-800 bg-zinc-950 p-4">
+                              <p className="mb-3 text-sm font-black">
+                                {currentActiveSide} Arguments
+                              </p>
+
+                              {activeSideReplies.length === 0 ? (
                                 <p className="text-sm text-zinc-600">
-                                  No replies on this side yet.
+                                  No {currentActiveSide} arguments yet.
                                 </p>
                               ) : (
                                 <div className="space-y-3">
-                                  {matchingReplies.map((reply) => (
+                                  {activeSideReplies.map((reply) => (
                                     <div
                                       key={reply.id}
                                       className="rounded-2xl bg-black p-3"
@@ -1135,10 +1292,10 @@ export default function Home() {
                                 </div>
                               )}
                             </div>
-                          );
-                        })}
-                      </div>
-                    </section>
+                          </div>
+                        </section>
+                      );
+                    })()}
                   </article>
                 ))}
               </div>
