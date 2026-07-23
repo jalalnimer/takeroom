@@ -1491,7 +1491,7 @@ export default function Home() {
           <button onClick={goHome} className="hover:text-white">
             Home
           </button>
-
+lkukcxulvk,
           <button
             onClick={() => chooseAction("Debate")}
             className="hover:text-white"
