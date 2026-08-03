@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
 
 type PostType = "Debate" | "Opinion" | "Review" | "Poll" | "Question";
@@ -18,6 +19,8 @@ type Room =
 type Stance = "Agree" | "Disagree" | "Mixed" | "Convince Me";
 
 type FeedMode = "For You" | "Hot" | "New" | "Controversial";
+
+type AuthMode = "login" | "signup";
 
 type Reply = {
   id: string;
@@ -45,6 +48,11 @@ type Post = {
   mixed: number;
   convinceMe: number;
   replies: Reply[];
+};
+
+type Profile = {
+  id: string;
+  username: string;
 };
 
 type DbPost = {
@@ -198,12 +206,10 @@ const createFormCopy: Record<
   },
   Review: {
     heading: "Write a review",
-    description:
-      "Review a film, show, album, game, product, or experience.",
+    description: "Review a film, show, album, game, product, or experience.",
     titlePlaceholder: "Example: Interstellar is still Nolan’s best film",
     bodyPlaceholder: "What did you like or dislike? Would you recommend it?",
-    sourcePlaceholder:
-      "Optional trailer, IMDb, song, article, or reference...",
+    sourcePlaceholder: "Optional trailer, IMDb, song, article, or reference...",
   },
   Poll: {
     heading: "Create a poll-style take",
@@ -215,8 +221,7 @@ const createFormCopy: Record<
   },
   Question: {
     heading: "Ask the room",
-    description:
-      "Ask a question and let people answer from different sides.",
+    description: "Ask a question and let people answer from different sides.",
     titlePlaceholder: "Example: Am I the only one who thinks this?",
     bodyPlaceholder: "Give context so people understand the question.",
     sourcePlaceholder: "Optional article, clip, or context link...",
@@ -310,6 +315,15 @@ export default function Home() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [isLoadingPosts, setIsLoadingPosts] = useState(true);
 
+  const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authUsername, setAuthUsername] = useState("");
+  const [authMessage, setAuthMessage] = useState("");
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+
   const [newType, setNewType] = useState<PostType>("Debate");
   const [newRoom, setNewRoom] = useState<Room>("Film");
   const [newTopic, setNewTopic] = useState("Marvel fatigue");
@@ -326,6 +340,10 @@ export default function Home() {
   );
   const [userVotes, setUserVotes] = useState<Record<string, Stance>>({});
   const [isVotingPost, setIsVotingPost] = useState<Record<string, boolean>>({});
+
+  const isSignedIn = Boolean(session);
+  const currentUsername =
+    profile?.username || session?.user.email?.split("@")[0] || "You";
 
   useEffect(() => {
     async function loadPostsAndReplies() {
@@ -382,6 +400,41 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    async function loadAuthSession() {
+      const { data, error } = await supabase.auth.getSession();
+
+      if (error) {
+        console.error("Error loading session:", error);
+        return;
+      }
+
+      setSession(data.session);
+
+      if (data.session?.user.id) {
+        await loadProfile(data.session.user.id);
+      }
+    }
+
+    loadAuthSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+
+      if (nextSession?.user.id) {
+        loadProfile(nextSession.user.id);
+      } else {
+        setProfile(null);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
     const savedVotes = window.localStorage.getItem(voteStorageKey);
 
     if (!savedVotes) {
@@ -394,6 +447,22 @@ export default function Home() {
       window.localStorage.removeItem(voteStorageKey);
     }
   }, []);
+
+  async function loadProfile(userId: string) {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, username")
+      .eq("id", userId)
+      .single();
+
+    if (error) {
+      console.error("Error loading profile:", error);
+      setProfile(null);
+      return;
+    }
+
+    setProfile(data as Profile);
+  }
 
   const pulseTopics = useMemo(() => {
     const topicScores = new Map<string, number>();
@@ -562,8 +631,91 @@ export default function Home() {
     window.localStorage.setItem(voteStorageKey, JSON.stringify(updatedVotes));
   }
 
-  async function handleCreatePost(event: React.FormEvent<HTMLFormElement>) {
+  async function handleAuthSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setAuthMessage("");
+
+    if (!authEmail.trim() || !authPassword.trim()) {
+      setAuthMessage("Enter your email and password.");
+      return;
+    }
+
+    if (authMode === "signup" && !authUsername.trim()) {
+      setAuthMessage("Choose a username.");
+      return;
+    }
+
+    setIsAuthLoading(true);
+
+    if (authMode === "signup") {
+      const cleanUsername = authUsername
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, "_");
+
+      const { error } = await supabase.auth.signUp({
+        email: authEmail.trim(),
+        password: authPassword,
+        options: {
+          data: {
+            username: cleanUsername,
+          },
+        },
+      });
+
+      setIsAuthLoading(false);
+
+      if (error) {
+        setAuthMessage(error.message);
+        return;
+      }
+
+      setAuthPassword("");
+      setAuthMessage(
+        "Account created. If email confirmation is enabled, check your email. If not, you should be logged in."
+      );
+      return;
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email: authEmail.trim(),
+      password: authPassword,
+    });
+
+    setIsAuthLoading(false);
+
+    if (error) {
+      setAuthMessage(error.message);
+      return;
+    }
+
+    setAuthPassword("");
+    setAuthMessage("Logged in successfully.");
+  }
+
+  async function handleLogout() {
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+      setAuthMessage(error.message);
+      return;
+    }
+
+    setAuthMessage("Logged out.");
+  }
+
+  function requireLogin() {
+    setAuthMessage("Log in or sign up first.");
+    scrollToSection("profile-section");
+  }
+
+  async function handleCreatePost(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!isSignedIn) {
+      requireLogin();
+      return;
+    }
 
     if (!title.trim() || !body.trim() || !newTopic.trim()) {
       return;
@@ -584,7 +736,7 @@ export default function Home() {
         title,
         body,
         source_url: sourceUrl.trim() || null,
-        author_name: "You",
+        author_name: currentUsername,
         stance: newStance,
         heat: 1,
         agree_count: initialAgree,
@@ -609,10 +761,15 @@ export default function Home() {
   }
 
   async function handleCreateReply(
-    event: React.FormEvent<HTMLFormElement>,
+    event: FormEvent<HTMLFormElement>,
     postId: string
   ) {
     event.preventDefault();
+
+    if (!isSignedIn) {
+      requireLogin();
+      return;
+    }
 
     const text = replyText[postId];
 
@@ -626,7 +783,7 @@ export default function Home() {
       .from("replies")
       .insert({
         post_id: postId,
-        author_name: "You",
+        author_name: currentUsername,
         stance,
         body: text.trim(),
       })
@@ -668,6 +825,11 @@ export default function Home() {
   }
 
   async function handleVote(postId: string, stance: Stance) {
+    if (!isSignedIn) {
+      requireLogin();
+      return;
+    }
+
     const currentPost = posts.find((post) => post.id === postId);
 
     if (!currentPost || isVotingPost[postId]) {
@@ -829,6 +991,13 @@ export default function Home() {
             className="rounded-full bg-orange-500 px-5 py-3 text-sm font-black text-white hover:bg-orange-600"
           >
             Create
+          </button>
+
+          <button
+            onClick={openProfile}
+            className="hidden rounded-full border border-zinc-800 px-4 py-3 text-xs font-black text-zinc-300 hover:border-orange-500 hover:text-white md:block"
+          >
+            {isSignedIn ? `@${currentUsername}` : "Log in"}
           </button>
         </div>
       </header>
@@ -1315,6 +1484,12 @@ export default function Home() {
               {createFormCopy[newType].description}
             </p>
 
+            {!isSignedIn && (
+              <div className="mt-4 rounded-2xl border border-orange-500/40 bg-orange-500/10 p-4 text-sm text-orange-300">
+                Log in or sign up before publishing a take.
+              </div>
+            )}
+
             <form onSubmit={handleCreatePost} className="mt-5 space-y-4">
               <select
                 value={newType}
@@ -1412,12 +1587,94 @@ export default function Home() {
             id="profile-section"
             className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5"
           >
-            <h2 className="text-xl font-black">Profile coming soon</h2>
+            {isSignedIn ? (
+              <>
+                <h2 className="text-xl font-black">@{currentUsername}</h2>
 
-            <p className="mt-3 text-sm leading-6 text-zinc-500">
-              Soon you will be able to create an account, save your takes, track
-              your replies, and see your stance history.
-            </p>
+                <p className="mt-2 text-sm text-zinc-500">
+                  You are logged in. Your posts and replies now show your
+                  username.
+                </p>
+
+                <div className="mt-4 rounded-2xl bg-black p-4 text-sm text-zinc-400">
+                  <p className="font-bold text-zinc-300">Email</p>
+                  <p className="mt-1 break-all">{session?.user.email}</p>
+                </div>
+
+                <button
+                  onClick={handleLogout}
+                  className="mt-4 w-full rounded-2xl border border-zinc-800 px-4 py-3 text-sm font-black text-zinc-300 hover:border-orange-500 hover:text-white"
+                >
+                  Log out
+                </button>
+              </>
+            ) : (
+              <>
+                <h2 className="text-xl font-black">
+                  {authMode === "login" ? "Log in" : "Create account"}
+                </h2>
+
+                <p className="mt-2 text-sm text-zinc-500">
+                  Sign in to post takes, vote, reply, and build your profile.
+                </p>
+
+                <form onSubmit={handleAuthSubmit} className="mt-5 space-y-3">
+                  {authMode === "signup" && (
+                    <input
+                      value={authUsername}
+                      onChange={(event) => setAuthUsername(event.target.value)}
+                      placeholder="Username"
+                      className="w-full rounded-2xl border border-zinc-800 bg-black px-4 py-3 text-sm outline-none placeholder:text-zinc-600 focus:border-orange-500"
+                    />
+                  )}
+
+                  <input
+                    value={authEmail}
+                    onChange={(event) => setAuthEmail(event.target.value)}
+                    placeholder="Email"
+                    type="email"
+                    className="w-full rounded-2xl border border-zinc-800 bg-black px-4 py-3 text-sm outline-none placeholder:text-zinc-600 focus:border-orange-500"
+                  />
+
+                  <input
+                    value={authPassword}
+                    onChange={(event) => setAuthPassword(event.target.value)}
+                    placeholder="Password"
+                    type="password"
+                    className="w-full rounded-2xl border border-zinc-800 bg-black px-4 py-3 text-sm outline-none placeholder:text-zinc-600 focus:border-orange-500"
+                  />
+
+                  <button
+                    disabled={isAuthLoading}
+                    className="w-full rounded-2xl bg-orange-500 px-4 py-3 font-black text-white hover:bg-orange-600 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {isAuthLoading
+                      ? "Loading..."
+                      : authMode === "login"
+                      ? "Log in"
+                      : "Sign up"}
+                  </button>
+                </form>
+
+                <button
+                  onClick={() => {
+                    setAuthMessage("");
+                    setAuthMode(authMode === "login" ? "signup" : "login");
+                  }}
+                  className="mt-4 text-sm font-bold text-orange-400 hover:text-orange-300"
+                >
+                  {authMode === "login"
+                    ? "Need an account? Sign up"
+                    : "Already have an account? Log in"}
+                </button>
+
+                {authMessage && (
+                  <p className="mt-4 rounded-2xl bg-black p-3 text-sm text-zinc-400">
+                    {authMessage}
+                  </p>
+                )}
+              </>
+            )}
           </section>
 
           <section
@@ -1491,7 +1748,7 @@ export default function Home() {
           <button onClick={goHome} className="hover:text-white">
             Home
           </button>
-lkukcxulvk,
+
           <button
             onClick={() => chooseAction("Debate")}
             className="hover:text-white"
